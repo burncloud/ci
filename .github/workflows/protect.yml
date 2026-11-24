@@ -1,0 +1,132 @@
+name: Protect
+
+on:
+  workflow_call:
+    inputs:
+      protected-paths:
+        description: 每行一个受保护路径。目录以 / 结尾并按仓库根前缀匹配；纯文件名匹配任意目录下的同名文件；Cargo.toml[lints] 只在 [lints] 表变化时失败。
+        required: false
+        type: string
+        default: |
+          .github/
+          contracts/
+          supply-chain/
+          clippy.toml
+          rustfmt.toml
+          deny.toml
+          rust-toolchain
+          rust-toolchain.toml
+          Cargo.toml[lints]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  protected-paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check protected paths
+        env:
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PROTECTED_PATHS: ${{ inputs.protected-paths }}
+          GH_TOKEN: ${{ github.token }}
+          # actionlint 1.7.12 还不认识 job.workflow_*，运行时对象里有这两个字段。
+          JOB_JSON: ${{ toJSON(job) }}
+        run: |
+          set -euo pipefail
+          workflow_repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_JSON")
+          workflow_sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_JSON")
+          if [[ -z "$workflow_repo" || -z "$workflow_sha" || "$workflow_repo" == "null" || "$workflow_sha" == "null" ]]; then
+            echo "protected: 无法从 job 上下文解析工作流定义位置。" >&2
+            jq -r 'keys[]' <<<"$JOB_JSON" >&2
+            exit 1
+          fi
+
+          case "$EVENT_NAME" in
+            pull_request | pull_request_target)
+              base=$BASE_SHA
+              head=$HEAD_SHA
+              ;;
+            push)
+              base=$BEFORE
+              head=$SHA
+              ;;
+            *)
+              echo "protected: 事件 ${EVENT_NAME} 没有可比较的 diff，跳过。"
+              exit 0
+              ;;
+          esac
+
+          if [[ -z "$base" || -z "$head" || "$base" == "null" || "$head" == "null" || "$base" =~ ^0+$ ]]; then
+            echo "protected: 无法确定 diff 范围（base=${base:-empty} head=${head:-empty}），拒绝放行。" >&2
+            exit 1
+          fi
+
+          tmp=$(mktemp -d)
+          curl -fsSL "https://raw.githubusercontent.com/${workflow_repo}/${workflow_sha}/scripts/check-protected-paths.sh" -o "${tmp}/check.sh"
+          printf '%s\n' "$PROTECTED_PATHS" > "${tmp}/paths"
+          if ! gh api "/repos/${REPO}/compare/${base}...${head}" > "${tmp}/compare.json"; then
+            echo "protected: compare API 调用失败，拒绝放行。" >&2
+            exit 1
+          fi
+          if jq -e '.message' "${tmp}/compare.json" >/dev/null; then
+            echo "protected: compare API 返回错误，拒绝放行。" >&2
+            cat "${tmp}/compare.json" >&2
+            exit 1
+          fi
+
+          file_count=$(jq '(.files // []) | length' "${tmp}/compare.json")
+          if [[ "$file_count" -ge 300 ]]; then
+            echo "protected: compare API 返回 ${file_count} 个文件，已到 300 的上限，结果可能被截断，拒绝放行。" >&2
+            exit 1
+          fi
+
+          jq -r '.files[]? | .filename, .previous_filename // empty' "${tmp}/compare.json" | sed '/^$/d' | sort -u > "${tmp}/changed"
+
+          fetch_file() {
+            local path=$1
+            local ref=$2
+            local dest=$3
+            local err=$4
+            if gh api -H "Accept: application/vnd.github.raw" "/repos/${REPO}/contents/${path}?ref=${ref}" > "$dest" 2>"$err"; then
+              return 0
+            fi
+            if grep -Eq 'HTTP 404|Not Found' "$err"; then
+              : > "$dest"
+              return 0
+            fi
+            echo "protected: 读取 ${path} @ ${ref} 失败，拒绝放行。" >&2
+            cat "$err" >&2
+            return 1
+          }
+
+          : > "${tmp}/lints"
+          while IFS= read -r path; do
+            base_name=$(basename "$path")
+            if [[ "$base_name" != "Cargo.toml" ]]; then
+              continue
+            fi
+            token=$(printf '%s' "$path" | tr '/' '_')
+            before=${tmp}/before-${token}
+            after=${tmp}/after-${token}
+            fetch_file "$path" "$base" "$before" "${before}.err"
+            fetch_file "$path" "$head" "$after" "${after}.err"
+            printf '%s|%s|%s\n' "$path" "$before" "$after" >> "${tmp}/lints"
+          done < "${tmp}/changed"
+
+          args=(--changed "${tmp}/changed" --paths "${tmp}/paths" --lints "${tmp}/lints")
+          if [[ "$REPO" == "$workflow_repo" && ( -z "$HEAD_REPO" || "$HEAD_REPO" == "null" || "$HEAD_REPO" == "$REPO" ) ]]; then
+            args+=(--exempt)
+          fi
+          bash "${tmp}/check.sh" "${args[@]}"

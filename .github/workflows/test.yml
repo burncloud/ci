@@ -1,0 +1,243 @@
+name: Test
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: rustup toolchain
+        required: false
+        type: string
+        default: stable
+      working-directory:
+        description: Cargo workspace 根目录，相对仓库根
+        required: false
+        type: string
+        default: "."
+      run-proptest:
+        description: 为 true 时用 PROPTEST_CASES=256 再跑一遍测试。没有 proptest 依赖则失败。
+        required: false
+        type: boolean
+        default: false
+      run-fuzz:
+        description: 为 true 时构建并短跑 fuzz target。没有 fuzz/ 则失败。需要 nightly。
+        required: false
+        type: boolean
+        default: false
+      run-mutants:
+        description: 为 true 时运行 cargo-mutants。没有 Cargo.toml 则失败。
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  cargo-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: cargo test
+        working-directory: ${{ inputs.working-directory }}
+        run: cargo test --workspace --all-targets
+
+  doc-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: cargo test --doc
+        working-directory: ${{ inputs.working-directory }}
+        run: cargo test --workspace --doc
+
+  proptest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Gate
+        id: gate
+        env:
+          RUN: ${{ inputs.run-proptest }}
+        run: |
+          set -euo pipefail
+          if [[ "$RUN" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "proptest: 输入 run-proptest=false，跳过。"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Run proptest
+        if: steps.gate.outputs.run == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r manifest; do
+            if grep -Eq '(^|[[:space:]])proptest[[:space:]]*(\.|[[:space:]]*=)|package[[:space:]]*=[[:space:]]*"proptest"' "$manifest"; then
+              found=1
+              break
+            fi
+          done < <(find . -name Cargo.toml -not -path '*/target/*')
+          if [[ "$found" -ne 1 ]]; then
+            echo "proptest: 已开启，但工作目录的 Cargo.toml 中没有 proptest 依赖。请添加依赖，或关闭 run-proptest。" >&2
+            exit 1
+          fi
+          echo "proptest: 使用 PROPTEST_CASES=256 运行 cargo test。"
+          PROPTEST_CASES=256 cargo test --workspace --all-targets --all-features
+
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Gate
+        id: gate
+        env:
+          RUN: ${{ inputs.run-fuzz }}
+        run: |
+          set -euo pipefail
+          if [[ "$RUN" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "cargo-fuzz: 输入 run-fuzz=false，跳过。"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require fuzz targets
+        if: steps.gate.outputs.run == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f fuzz/Cargo.toml ]]; then
+            echo "cargo-fuzz: 已开启，但 ${PWD}/fuzz/Cargo.toml 不存在。请在该目录运行 cargo fuzz init，或关闭 run-fuzz。" >&2
+            exit 1
+          fi
+          mapfile -t targets < <(find fuzz/fuzz_targets -type f -name '*.rs' -printf '%f\n' | sed 's/\.rs$//')
+          if [[ ${#targets[@]} -eq 0 ]]; then
+            echo "cargo-fuzz: 已找到 fuzz/Cargo.toml，但 fuzz/fuzz_targets 下没有 .rs 目标。" >&2
+            exit 1
+          fi
+          printf '%s\n' "${targets[@]}" > "${RUNNER_TEMP}/fuzz-targets"
+
+      - name: Install toolchain
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Install cargo-fuzz
+        if: steps.gate.outputs.run == 'true'
+        run: cargo install --locked cargo-fuzz@0.13.2
+
+      - name: Install nightly
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: nightly
+
+      - name: Build and run fuzz targets
+        if: steps.gate.outputs.run == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          if ! command -v g++ >/dev/null 2>&1; then
+            echo "cargo-fuzz: 需要 g++ 来链接 libFuzzer。" >&2
+            exit 1
+          fi
+          cargo +nightly fuzz build
+          while IFS= read -r target; do
+            echo "cargo-fuzz: 运行 ${target}，最长 15 秒。"
+            cargo +nightly fuzz run "$target" -- -max_total_time=15
+          done < "${RUNNER_TEMP}/fuzz-targets"
+
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Gate
+        id: gate
+        env:
+          RUN: ${{ inputs.run-mutants }}
+        run: |
+          set -euo pipefail
+          if [[ "$RUN" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "cargo-mutants: 输入 run-mutants=false，跳过。"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require package
+        if: steps.gate.outputs.run == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f Cargo.toml ]]; then
+            echo "cargo-mutants: 已开启，但工作目录没有 Cargo.toml。" >&2
+            exit 1
+          fi
+
+      - name: Install toolchain
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Install cargo-mutants
+        if: steps.gate.outputs.run == 'true'
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-mutants@27.1.0
+          fallback: none
+
+      - name: cargo mutants
+        if: steps.gate.outputs.run == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        run: cargo mutants --timeout 120

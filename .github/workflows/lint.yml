@@ -1,0 +1,92 @@
+name: Lint
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: rustup toolchain
+        required: false
+        type: string
+        default: stable
+      working-directory:
+        description: Cargo workspace 根目录，相对仓库根
+        required: false
+        type: string
+        default: "."
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: rustfmt
+
+      - name: cargo fmt
+        working-directory: ${{ inputs.working-directory }}
+        run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: clippy
+
+      - name: cargo clippy
+        working-directory: ${{ inputs.working-directory }}
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic
+
+  unsafe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Forbid unsafe
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          # actionlint 1.7.12 还不认识 job.workflow_*，运行时对象里有这两个字段。
+          JOB_JSON: ${{ toJSON(job) }}
+        run: |
+          set -euo pipefail
+          workflow_repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_JSON")
+          workflow_sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_JSON")
+          if [[ -z "$workflow_repo" || -z "$workflow_sha" || "$workflow_repo" == "null" || "$workflow_sha" == "null" ]]; then
+            echo "unsafe: 无法从 job 上下文解析工作流定义位置。" >&2
+            jq -r 'keys[]' <<<"$JOB_JSON" >&2
+            exit 1
+          fi
+          curl -fsSL "https://raw.githubusercontent.com/${workflow_repo}/${workflow_sha}/scripts/check-unsafe.sh" -o "${RUNNER_TEMP}/check-unsafe.sh"
+          bash "${RUNNER_TEMP}/check-unsafe.sh" "$WORKING_DIRECTORY"

@@ -1,0 +1,45 @@
+# 调用方仓库没有自己的 deny.toml 时，供应链工作流回退到本文件。
+# 调用方根目录或工作目录向上能找到 deny.toml 时，以调用方的文件为准。
+
+[graph]
+all-features = true
+
+[advisories]
+# 漏洞公告本身始终按拒绝处理。yanked 的取值是 allow/warn/deny。
+# cargo-deny 0.22 里 unmaintained / unsound 的最严级别是 all，不是 deny。
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.93
+# 白名单故意宽于单个 crate 的实际许可证，未出现不算失败。
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+]
+
+[licenses.private]
+# 未发布的 workspace crate 也要有许可证。
+ignore = false
+
+[bans]
+wildcards = "deny"
+allow-wildcard-paths = false
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

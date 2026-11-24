@@ -1,0 +1,86 @@
+name: Rust
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: rustup toolchain
+        required: false
+        type: string
+        default: stable
+      working-directory:
+        description: Cargo workspace 根目录，相对仓库根
+        required: false
+        type: string
+        default: "."
+      run-proptest:
+        description: 为 true 时运行 proptest。默认关闭。
+        required: false
+        type: boolean
+        default: false
+      run-fuzz:
+        description: 为 true 时运行 cargo-fuzz。默认关闭。
+        required: false
+        type: boolean
+        default: false
+      run-mutants:
+        description: 为 true 时运行 cargo-mutants。默认关闭。
+        required: false
+        type: boolean
+        default: false
+      semver-baseline:
+        description: auto、base、tag，或其他 git rev
+        required: false
+        type: string
+        default: auto
+      protected-paths:
+        description: 传给防作弊层的路径列表。省略时与 protect.yml 的默认值相同。
+        required: false
+        type: string
+        default: |
+          .github/
+          contracts/
+          supply-chain/
+          clippy.toml
+          rustfmt.toml
+          deny.toml
+          rust-toolchain
+          rust-toolchain.toml
+          Cargo.toml[lints]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory }}
+
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory }}
+      run-proptest: ${{ inputs.run-proptest }}
+      run-fuzz: ${{ inputs.run-fuzz }}
+      run-mutants: ${{ inputs.run-mutants }}
+
+  supply-chain:
+    uses: ./.github/workflows/supply-chain.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory }}
+
+  api:
+    uses: ./.github/workflows/api.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory }}
+      semver-baseline: ${{ inputs.semver-baseline }}
+
+  protect:
+    uses: ./.github/workflows/protect.yml
+    with:
+      protected-paths: ${{ inputs.protected-paths }}

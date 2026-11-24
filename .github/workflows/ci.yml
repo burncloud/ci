@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: stable
+
+      - name: Install linters
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz" | sha256sum -c
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
+          curl -fsSL -o /tmp/shellcheck.tar.xz https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/shellcheck.tar.xz" | sha256sum -c
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 0755 /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+      - name: actionlint
+        run: actionlint -shellcheck "$(command -v shellcheck)"
+
+      - name: Check scripts
+        run: |
+          set -euo pipefail
+          root=$(pwd)
+          tmp=$(mktemp -d)
+
+          extract_default() {
+            awk '
+              $0 ~ /^        default: \|$/ { capture = 1; next }
+              capture && /^          [^ ]/ { sub(/^          /, ""); print; next }
+              capture { exit }
+            ' "$1"
+          }
+          script_defaults=$(bash scripts/check-protected-paths.sh --print-defaults)
+          protect_defaults=$(extract_default .github/workflows/protect.yml)
+          rust_defaults=$(extract_default .github/workflows/rust.yml)
+          if [[ "$script_defaults" != "$protect_defaults" ]] || [[ "$script_defaults" != "$rust_defaults" ]]; then
+            echo "受保护路径默认值在脚本、protect.yml、rust.yml 之间不一致。" >&2
+            echo "script:" >&2
+            printf '%s\n' "$script_defaults" >&2
+            echo "protect.yml:" >&2
+            printf '%s\n' "$protect_defaults" >&2
+            echo "rust.yml:" >&2
+            printf '%s\n' "$rust_defaults" >&2
+            exit 1
+          fi
+
+          printf '%s\n' 'src/lib.rs' > "${tmp}/ok"
+          bash scripts/check-protected-paths.sh --changed "${tmp}/ok"
+
+          printf '%s\n' '.github/workflows/ci.yml' > "${tmp}/bad"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
+            echo "预期 .github/ 命中后失败。" >&2
+            exit 1
+          fi
+          bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --exempt
+
+          printf '%s\n' 'crates/foo/deny.toml' 'contracts/api.md' 'supply-chain/config.toml' 'rust-toolchain.toml' > "${tmp}/bad"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
+            echo "预期受保护文件命中后失败。" >&2
+            exit 1
+          fi
+
+          printf '[package]\nname = "x"\nversion = "0.1.0"\n' > "${tmp}/before"
+          printf '[package]\nname = "x"\nversion = "0.2.0"\n' > "${tmp}/after"
+          printf '%s\n' Cargo.toml > "${tmp}/changed"
+          printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/after" > "${tmp}/lints"
+          bash scripts/check-protected-paths.sh --changed "${tmp}/changed" --lints "${tmp}/lints"
+
+          printf '[package]\nname = "x"\n\n[lints.clippy]\npedantic = "allow"\n' > "${tmp}/lints-after"
+          printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/lints-after" > "${tmp}/lints"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/changed" --lints "${tmp}/lints"; then
+            echo "预期 [lints] 变化失败。" >&2
+            exit 1
+          fi
+
+          bash scripts/check-unsafe.sh tests/fixture
+
+          bad=$(mktemp -d)
+          cp -a tests/fixture/. "$bad/"
+          sed -i '/forbid(unsafe_code)/d' "$bad/src/lib.rs"
+          if bash scripts/check-unsafe.sh "$bad"; then
+            echo "预期缺少 forbid(unsafe_code) 时失败。" >&2
+            exit 1
+          fi
+
+          bad=$(mktemp -d)
+          cp -a tests/fixture/. "$bad/"
+          printf '\nfn hidden() {\n    let _value = unsafe { 1 };\n}\n' >> "$bad/src/lib.rs"
+          if bash scripts/check-unsafe.sh "$bad"; then
+            echo "预期出现 unsafe 关键字时失败。" >&2
+            exit 1
+          fi
+
+          scan=$(bash scripts/scan-capabilities.sh tests/fixture)
+          printf '%s\n' "$scan"
+          printf '%s\n' "$scan" | grep -q '占位报告'
+          printf '%s\n' "$scan" | grep -q 'std::fs: 0'
+
+          found=$(GITHUB_WORKSPACE="$root" bash scripts/resolve-deny-config.sh tests/fixture)
+          if [[ "$found" != "$root/deny.toml" ]]; then
+            echo "预期从示例 crate 向上找到仓库根 deny.toml，实际是 ${found}" >&2
+            exit 1
+          fi
+
+          isolated=$(mktemp -d)
+          mkdir -p "${isolated}/crate"
+          printf '[package]\nname = "t"\nversion = "0.1.0"\nedition = "2021"\n' > "${isolated}/crate/Cargo.toml"
+          if GITHUB_WORKSPACE="$isolated" bash scripts/resolve-deny-config.sh "${isolated}/crate"; then
+            echo "预期没有 deny.toml 且不能下载默认配置时失败。" >&2
+            exit 1
+          fi
+
+  rust:
+    uses: ./.github/workflows/rust.yml
+    with:
+      working-directory: tests/fixture
