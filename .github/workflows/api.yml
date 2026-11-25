@@ -1,0 +1,111 @@
+name: API
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: 仓库没有 rust-toolchain 文件时使用。不要依赖浮动的 stable。
+        required: false
+        type: string
+        default: ""
+      working-directory:
+        description: Cargo workspace 根目录，相对仓库根
+        required: false
+        type: string
+        default: "."
+      semver-baseline:
+        description: auto、base、tag，或其他 git rev。auto 在 pull request 上用 base sha，否则用最新 tag。
+        required: false
+        type: string
+        default: auto
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  semver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
+
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-semver-checks@0.51.0
+          fallback: none
+
+      - name: cargo semver-checks
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          SEMVER_BASELINE: ${{ inputs.semver-baseline }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash .burncloud-ci/scripts/run-semver-checks.sh
+
+  capabilities:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
+
+      - name: Scan capabilities
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/scan-capabilities.sh "$WORKING_DIRECTORY"

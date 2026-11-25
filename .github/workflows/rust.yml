@@ -1,0 +1,130 @@
+name: Rust
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: 仓库没有 rust-toolchain 文件时使用。不要依赖浮动的 stable。
+        required: false
+        type: string
+        default: ""
+      working-directory:
+        description: Cargo workspace 根目录，相对仓库根。直接触发时若仓库根没有 Cargo.toml，会改用 tests/fixture。
+        required: false
+        type: string
+        default: "."
+      targets:
+        description: 额外 cargo check target，逗号或空白分隔。插件仓库可填 wasm32-wasip2。
+        required: false
+        type: string
+        default: ""
+      wit-dir:
+        description: WIT 目录。不存在则跳过。
+        required: false
+        type: string
+        default: wit
+      run-proptest:
+        description: 为 true 时运行 proptest。默认关闭。
+        required: false
+        type: boolean
+        default: false
+      run-fuzz:
+        description: 为 true 时运行 cargo-fuzz。默认关闭。
+        required: false
+        type: boolean
+        default: false
+      run-mutants:
+        description: 为 true 时运行 cargo-mutants。默认关闭。
+        required: false
+        type: boolean
+        default: false
+      semver-baseline:
+        description: auto、base、tag，或其他 git rev
+        required: false
+        type: string
+        default: auto
+      protected-paths:
+        description: 传给防作弊层。留空则用脚本里的默认列表。
+        required: false
+        type: string
+        default: ""
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  resolve:
+    if: inputs.working-directory == '' || inputs.working-directory == null
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      dir: ${{ steps.dir.outputs.dir }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Detect workspace
+        id: dir
+        run: |
+          set -euo pipefail
+          if [[ -f Cargo.toml ]]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REPOSITORY" == "burncloud/ci" && -f tests/fixture/Cargo.toml ]]; then
+            echo "dir=tests/fixture" >> "$GITHUB_OUTPUT"
+          else
+            echo "没有仓库根 Cargo.toml。只有 burncloud/ci 可以回退到 tests/fixture。" >&2
+            exit 1
+          fi
+
+  lint:
+    needs: resolve
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
+    uses: ./.github/workflows/lint.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
+
+  test:
+    needs: resolve
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
+    uses: ./.github/workflows/test.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
+      targets: ${{ inputs.targets }}
+      wit-dir: ${{ inputs.wit-dir || 'wit' }}
+      run-proptest: ${{ github.repository == 'burncloud/ci' || inputs.run-proptest == true }}
+      run-fuzz: ${{ github.repository == 'burncloud/ci' || inputs.run-fuzz == true }}
+      run-mutants: ${{ github.repository == 'burncloud/ci' || inputs.run-mutants == true }}
+
+  supply-chain:
+    needs: resolve
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
+    uses: ./.github/workflows/supply-chain.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
+
+  api:
+    needs: resolve
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
+    uses: ./.github/workflows/api.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
+      semver-baseline: ${{ github.repository == 'burncloud/ci' && '19c15f8ba75d81dcc51c89af43b51a386b76f2f3' || inputs.semver-baseline || 'auto' }}
+
+  protect:
+    needs: resolve
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
+    uses: ./.github/workflows/protect.yml
+    with:
+      protected-paths: ${{ inputs.protected-paths }}

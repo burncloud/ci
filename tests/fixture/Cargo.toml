@@ -1,0 +1,16 @@
+[package]
+name = "burncloud-ci-fixture"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Minimal crate exercised by burncloud/ci workflows."
+rust-version = "1.100.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "=1.12.0"

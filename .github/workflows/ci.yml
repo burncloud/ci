@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint-workflows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/resolve-toolchain.sh
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.toolchain.outputs.toolchain }}
+
+      - name: Install linters
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz" | sha256sum -c
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
+          curl -fsSL -o /tmp/shellcheck.tar.xz https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/shellcheck.tar.xz" | sha256sum -c
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 0755 /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+      - name: actionlint
+        run: actionlint -shellcheck "$(command -v shellcheck)"
+
+      - name: Check scripts
+        run: |
+          set -euo pipefail
+          root=$(pwd)
+          tmp=$(mktemp -d)
+
+          defaults=$(bash scripts/check-protected-paths.sh --print-defaults)
+          for line in .github/ .cargo/ vendor/ unsafe-crates.txt rust-toolchain.toml 'Cargo.toml@removed' 'Cargo.toml[lints]'; do
+            if ! printf '%s\n' "$defaults" | grep -Fxq "$line"; then
+              echo "默认路径缺少 ${line}" >&2
+              exit 1
+            fi
+          done
+          if grep -n 'default: |' .github/workflows/protect.yml .github/workflows/rust.yml; then
+            echo "受保护路径默认值只能留在 scripts/check-protected-paths.sh。" >&2
+            exit 1
+          fi
+
+          printf '%s\n' 'src/lib.rs' > "${tmp}/ok"
+          bash scripts/check-protected-paths.sh --changed "${tmp}/ok"
+
+          printf '%s\n' '.github/workflows/ci.yml' > "${tmp}/bad"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
+            echo "预期 .github/ 命中后失败。" >&2
+            exit 1
+          fi
+          bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --exempt
+
+          printf '%s\n' 'crates/foo/deny.toml' 'contracts/api.md' 'supply-chain/config.toml' 'rust-toolchain.toml' '.cargo/config.toml' 'vendor/serde/src/lib.rs' > "${tmp}/bad"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
+            echo "预期受保护文件命中后失败。" >&2
+            exit 1
+          fi
+
+          printf 'removed\tCargo.toml\n' > "${tmp}/deleted-root"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/deleted-root"; then
+            echo "预期删除根 Cargo.toml 失败。" >&2
+            exit 1
+          fi
+          printf 'modified\tCargo.toml\n' > "${tmp}/edited-root"
+          printf '[package]\nname = "x"\nversion = "0.1.0"\n' > "${tmp}/before"
+          printf '[package]\nname = "x"\nversion = "0.2.0"\n' > "${tmp}/after"
+          printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/after" > "${tmp}/lints"
+          bash scripts/check-protected-paths.sh --changed "${tmp}/edited-root" --lints "${tmp}/lints"
+
+          printf '%s\n' Cargo.toml > "${tmp}/changed"
+          expect_fail() {
+            local label=$1
+            local after=$2
+            printf '%s\n' "$after" > "${tmp}/section-after"
+            printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/section-after" > "${tmp}/lints"
+            if bash scripts/check-protected-paths.sh --changed "${tmp}/changed" --lints "${tmp}/lints"; then
+              echo "预期 ${label} 变化失败。" >&2
+              exit 1
+            fi
+          }
+          expect_fail 'dotted lints' $'lints.clippy.pedantic = { level = "allow", priority = -1 }\n'
+          expect_fail 'dotted patch' $'patch.crates-io.foo = { path = "v" }\n'
+          expect_fail 'spaced table' $'[ patch.crates-io ]\nfoo = { path = "v" }\n'
+          expect_fail 'quoted table' $'[ "patch" . "crates-io" ]\nfoo = { path = "v" }\n'
+          expect_fail '[lints]' $'[package]\nname = "x"\n\n[lints.clippy]\npedantic = "allow"\n'
+
+          : > "${tmp}/empty-paths"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --paths "${tmp}/empty-paths"; then
+            echo "空路径列表必须回退到默认值并失败。" >&2
+            exit 1
+          fi
+
+          bash scripts/check-unsafe.sh tests/fixture
+
+          bad=$(mktemp -d)
+          mkdir -p "$bad/src"
+          printf '%s\n' '[package]' 'name = "bypass-unsafe"' 'version = "0.1.0"' 'edition = "2021"' 'license = "MIT OR Apache-2.0"' > "$bad/Cargo.toml"
+          printf '%s\n' '/*' '#![forbid(unsafe_code)]' '*/' "pub fn f<'a>(x: &u8) -> u8 { unsafe { *(x as *const u8) } }" > "$bad/src/lib.rs"
+          cargo check --manifest-path "$bad/Cargo.toml" --offline || cargo check --manifest-path "$bad/Cargo.toml"
+          if bash scripts/check-unsafe.sh "$bad"; then
+            echo "预期块注释里的 forbid 不能通过 unsafe 检查。" >&2
+            exit 1
+          fi
+
+          if bash scripts/run-cargo-vet.sh --classify-source 'registry+https://github.com/rust-lang/crates.io-index'; then
+            echo "预期 crates.io 来源不被信任。" >&2
+            exit 1
+          fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/evil/burncloud-foo.git'; then
+            echo "预期非 burncloud 组织的 git 来源不被信任。" >&2
+            exit 1
+          fi
+          bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/foo.git?tag=v1#abc'
+
+          scan=$(bash scripts/scan-capabilities.sh tests/fixture)
+          printf '%s\n' "$scan"
+          printf '%s\n' "$scan" | grep -q '占位报告'
+          printf '%s\n' "$scan" | grep -q 'std::fs: 0'
+
+          found=$(GITHUB_WORKSPACE="$root" bash scripts/resolve-deny-config.sh tests/fixture)
+          if [[ "$found" != "$root/deny.toml" ]]; then
+            echo "预期从示例 crate 向上找到仓库根 deny.toml，实际是 ${found}" >&2
+            exit 1
+          fi
+
+          isolated=$(mktemp -d)
+          mkdir -p "${isolated}/crate"
+          printf '[package]\nname = "t"\nversion = "0.1.0"\nedition = "2021"\n' > "${isolated}/crate/Cargo.toml"
+          if GITHUB_WORKSPACE="$isolated" bash scripts/resolve-deny-config.sh "${isolated}/crate"; then
+            echo "预期没有 deny.toml 且没有默认文件时失败。" >&2
+            exit 1
+          fi
+          found=$(GITHUB_WORKSPACE="$isolated" DEFAULT_DENY="$root/deny.toml" bash scripts/resolve-deny-config.sh "${isolated}/crate")
+          if [[ "$found" != "$root/deny.toml" ]]; then
+            echo "预期使用 DEFAULT_DENY，实际是 ${found}" >&2
+            exit 1
+          fi
+

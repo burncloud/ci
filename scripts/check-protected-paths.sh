@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# 只根据调用方给出的路径列表和 Cargo.toml 文本判断，不读取 git 工作区。
+set -euo pipefail
+
+print_defaults() {
+  cat <<'EOF'
+.github/
+.cargo/
+vendor/
+contracts/
+supply-chain/
+clippy.toml
+rustfmt.toml
+deny.toml
+rust-toolchain
+rust-toolchain.toml
+unsafe-crates.txt
+Cargo.toml@removed
+Cargo.toml[lints]
+EOF
+}
+
+usage() {
+  echo "usage: check-protected-paths.sh --changed FILE [--paths FILE] [--lints FILE] [--exempt] [--print-defaults]" >&2
+}
+
+changed=""
+paths_file=""
+lints_file=""
+exempt=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --changed)
+      changed=$2
+      shift 2
+      ;;
+    --paths)
+      paths_file=$2
+      shift 2
+      ;;
+    --lints)
+      lints_file=$2
+      shift 2
+      ;;
+    --exempt)
+      exempt=1
+      shift
+      ;;
+    --print-defaults)
+      print_defaults
+      exit 0
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$changed" || ! -f "$changed" ]]; then
+  usage
+  exit 2
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+if [[ -n "$paths_file" ]]; then
+  cp "$paths_file" "$tmp/paths"
+else
+  print_defaults >"$tmp/paths"
+fi
+
+# 空列表表示用脚本里的默认值，不接受调用方用空字符串拿掉保护。
+if ! grep -Eqv '^[[:space:]]*(#|$)' "$tmp/paths"; then
+  print_defaults >"$tmp/paths"
+fi
+grep -Ev '^[[:space:]]*(#|$)' "$tmp/paths" >"$tmp/patterns" || true
+
+extract_lints() {
+  local file=$1
+  python3 - "$file" <<'PY'
+import json
+import sys
+import tomllib
+from pathlib import Path
+
+path = Path(sys.argv[1])
+raw = path.read_bytes() if path.is_file() else b""
+if not raw.strip():
+    doc = {}
+else:
+    try:
+        doc = tomllib.loads(raw.decode())
+    except Exception as exc:
+        print(f"protected: 无法解析 {path}: {exc}", file=sys.stderr)
+        sys.exit(2)
+workspace = doc.get("workspace")
+workspace_lints = None
+if isinstance(workspace, dict):
+    workspace_lints = workspace.get("lints")
+picked = {
+    "lints": doc.get("lints"),
+    "workspace.lints": workspace_lints,
+    "patch": doc.get("patch"),
+    "replace": doc.get("replace"),
+}
+print(json.dumps(picked, sort_keys=True, separators=(",", ":")))
+PY
+}
+
+check_lints=0
+if grep -Fxq 'Cargo.toml[lints]' "$tmp/patterns"; then
+  check_lints=1
+fi
+
+hits=0
+while IFS= read -r raw || [[ -n "$raw" ]]; do
+  [[ -z "$raw" ]] && continue
+  status=""
+  path=$raw
+  if [[ "$raw" == *$'\t'* ]]; then
+    status=${raw%%$'\t'*}
+    path=${raw#*$'\t'}
+  fi
+  while IFS= read -r pattern || [[ -n "$pattern" ]]; do
+    [[ -z "$pattern" || "$pattern" == "Cargo.toml[lints]" ]] && continue
+    matched=0
+    if [[ "$pattern" == "Cargo.toml@removed" ]]; then
+      if [[ "$path" == "Cargo.toml" && "$status" == "removed" ]]; then
+        matched=1
+      fi
+    elif [[ "$pattern" == */ ]]; then
+      prefix=${pattern%/}
+      if [[ "$path" == "$prefix" || "$path" == "$prefix"/* ]]; then
+        matched=1
+      fi
+    elif [[ "$pattern" == */* ]]; then
+      if [[ "$path" == "$pattern" || "$path" == "$pattern"* ]]; then
+        matched=1
+      fi
+    elif [[ "$path" == "$pattern" || "$path" == */"$pattern" ]]; then
+      matched=1
+    fi
+    if [[ "$matched" -eq 1 ]]; then
+      echo "protected: ${path} 匹配 ${pattern}"
+      hits=1
+    fi
+  done <"$tmp/patterns"
+done <"$changed"
+
+if [[ "$check_lints" -eq 1 ]]; then
+  if [[ -n "$lints_file" ]]; then
+    while IFS='|' read -r path before after; do
+      [[ -z "${path:-}" ]] && continue
+      if [[ -z "${before:-}" || -z "${after:-}" || ! -f "$before" || ! -f "$after" ]]; then
+        echo "protected: ${path} 缺少用于比较 [lints] 的文件内容，拒绝放行。" >&2
+        hits=1
+        continue
+      fi
+      if ! extract_lints "$before" >"$tmp/before"; then
+        echo "protected: ${path} 的旧文本无法解析，拒绝放行。" >&2
+        hits=1
+        continue
+      fi
+      if ! extract_lints "$after" >"$tmp/after"; then
+        echo "protected: ${path} 的新文本无法解析，拒绝放行。" >&2
+        hits=1
+        continue
+      fi
+      if ! cmp -s "$tmp/before" "$tmp/after"; then
+        echo "protected: ${path} 的 lints、workspace.lints、patch 或 replace 发生了变化"
+        hits=1
+      fi
+    done <"$lints_file"
+  fi
+
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    path=$raw
+    if [[ "$raw" == *$'\t'* ]]; then
+      path=${raw#*$'\t'}
+    fi
+    base=$(basename "$path")
+    if [[ "$base" != "Cargo.toml" ]]; then
+      continue
+    fi
+    if [[ -z "$lints_file" ]] || ! awk -F'|' -v path="$path" '$1 == path { found = 1 } END { exit !found }' "$lints_file"; then
+      echo "protected: ${path} 有改动，但没有提供内容来判断受保护的表，拒绝放行。" >&2
+      hits=1
+    fi
+  done <"$changed"
+fi
+
+if [[ "$hits" -eq 0 ]]; then
+  echo "protected: 没有命中受保护路径。"
+  exit 0
+fi
+
+if [[ "$exempt" -eq 1 ]]; then
+  echo "protected: 当前仓库是 burncloud/ci。命中项已记录，不阻断。其他仓库会失败。"
+  exit 0
+fi
+
+echo "protected: 受保护路径被修改，检查失败。" >&2
+exit 1
