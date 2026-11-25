@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_ref_re='^([0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$'
+pinned_ref_re='^(latest|[0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$'
 
 is_pinned_ref() {
   local ref=$1

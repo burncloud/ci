@@ -6,13 +6,13 @@
 
 组织级规则集（包括 required workflow）需要 GitHub Team 或 Enterprise。这跟仓库是否公开无关。
 
-免费套餐采用四件事：清单仓库保持公开、`uses` 只引用 40 位完整 SHA 或 `vX.Y.Z` 标签、单仓库规则集、CODEOWNERS。禁止 `v1` 这类浮动标签，也禁止分支名。SHA 接受大小写十六进制，`v` 只小写，正则是 `^([0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$`。组织级方案留在本文后半，作为升级到 Team 之后的选项。
+免费套餐采用四件事：清单仓库保持公开、调用方 `uses` 用 `@latest`、单仓库规则集、CODEOWNERS。要钉死某一次发布就用 40 位完整 SHA 或 `vX.Y.Z`。禁止 `v1` 这类别的浮动标签，也禁止分支名。`latest` 只接受这一个小写名字。SHA 接受大小写十六进制，`v` 只小写。组织级方案留在本文后半，作为升级到 Team 之后的选项。
 
 ## 免费套餐：清单仓库
 
 清单仓库必须公开。免费套餐下，私有仓库用不了规则集，也用不了分支保护。
 
-调用方工作流用 `uses: burncloud/ci/.github/workflows/rust.yml@<40 位 SHA 或 vX.Y.Z>`。工作流不要命名为 `Rust`。
+调用方工作流用 `uses: burncloud/ci/.github/workflows/rust.yml@latest`。工作流不要命名为 `Rust`。
 
 PR 作者可以修改调用方的 `ci.yml`：换掉 `uses`、改 `protected-paths`，或写一个同名空 job。单仓库规则集挡不住这份 YAML。安全性靠 CODEOWNERS 审批兜底。`.github/workflows/` 和 `CODEOWNERS` 本身都要写进 CODEOWNERS，改工作流必须有 Code Owner 批准。
 
@@ -54,23 +54,35 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。新增的注释检查同样按这个形状列入：`lint / comments`、`rust / lint / comments`、`caller / lint / comments`。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
 
-标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此拆成两份：
+标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此 `v*` 拆成两份，`latest` 再拆成「不能删」和「可以移动」两份。`refs/tags/v*` 是通配，两份 `v*` 规则集都显式 `exclude` `refs/tags/latest`，避免把浮动标签卷进去。
 
-- [docs/rulesets/ci-tags.json](rulesets/ci-tags.json) 匹配 `refs/tags/v*`，规则是 `update`、`deletion`、`non_fast_forward`。`update` 不带 `parameters`：`update_allows_fetch_and_merge` 只对分支有意义，默认就是 false，服务端创建 tag 规则集时会丢掉这个字段，读回是 `{"type":"update"}`。语义不变。`bypass_actors` 为空，仓库管理员也不能移动或删除这些标签。移动标签是 ref 的 `update`，`non_fast_forward` 再挡住非快进更新。
-- [docs/rulesets/ci-tags-create.json](rulesets/ci-tags-create.json) 只有 `creation`。bypass 是同一个仓库管理员角色，`bypass_mode` 为 `always`。creation 的含义是：只有能 bypass 的人可以创建匹配的 tag。
+- [docs/rulesets/ci-tags.json](rulesets/ci-tags.json) 匹配 `refs/tags/v*`，并排除 `refs/tags/latest`。规则是 `update`、`deletion`、`non_fast_forward`。`update` 不带 `parameters`：`update_allows_fetch_and_merge` 只对分支有意义，默认就是 false，服务端创建 tag 规则集时会丢掉这个字段，读回是 `{"type":"update"}`。语义不变。`bypass_actors` 为空，仓库管理员也不能移动或删除这些标签。移动标签是 ref 的 `update`，`non_fast_forward` 再挡住非快进更新。
+- [docs/rulesets/ci-tags-create.json](rulesets/ci-tags-create.json) 只匹配 `refs/tags/v*`，并排除 `refs/tags/latest`。只有 `creation`。bypass 是仓库管理员角色（`RepositoryRole`，`actor_id` `5`），`bypass_mode` 为 `always`。creation 的含义是：只有能 bypass 的人可以创建匹配的 tag。线上如果这份 bypass 是 null，谁都建不了 `v*` 标签，要按下面的流程把期望 JSON 应用到现有规则集。
+- [docs/rulesets/ci-tags-latest-delete.json](rulesets/ci-tags-latest-delete.json) 只匹配 `refs/tags/latest`，只有 `deletion`，没有 bypass。谁都不能删 `latest`。
+- [docs/rulesets/ci-tags-latest-move.json](rulesets/ci-tags-latest-move.json) 只匹配 `refs/tags/latest`。规则是 `update`、`non_fast_forward`、`creation`。bypass 只有仓库管理员 `always`，所以管理员可以创建并移动 `latest`。deletion 不放在这份里，否则同一个 bypass 会连删除一起放行。
 
-三份的 `enforcement` 都是 `disabled`。在 `burncloud/ci` 的检出里执行。读回用 `scripts/check-ruleset-readback.sh`：没有 `pull_request` 或 `required_status_checks` 的标签规则集也按同一套规则比较。
+每次合并到 main 之后，先打新的 `vX.Y.Z`。这个标签创建后不能改、不能删。再把 `latest` 移到同一个提交。调用方仓库用 `@latest`。
+
+改规则集时，仓库里的期望 JSON 保持 `enforcement` 为 `disabled`。已有的规则集先改成 `disabled`，读回比对，再改成 `active` 并再比对一次。新建的规则集按 `disabled` 导入，读回比对，再改成 `active` 并再比对。不要把 `active` 写回仓库。
+
+五份的 `enforcement` 都是 `disabled`。在 `burncloud/ci` 的检出里执行。读回用 `scripts/check-ruleset-readback.sh`：没有 `pull_request` 或 `required_status_checks` 的标签规则集也按同一套规则比较。已经存在的规则集用 PUT 更新，不要再 POST 一份同名的。
 
 ```bash
 main_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-main.json --jq .id)
 tags_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags.json --jq .id)
 create_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags-create.json --jq .id)
+latest_delete_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags-latest-delete.json --jq .id)
+latest_move_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags-latest-move.json --jq .id)
 gh api "repos/burncloud/ci/rulesets/${main_id}" > /tmp/ci-main.readback.json
 bash scripts/check-ruleset-readback.sh docs/rulesets/ci-main.json /tmp/ci-main.readback.json
 gh api "repos/burncloud/ci/rulesets/${tags_id}" > /tmp/ci-tags.readback.json
 bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags.json /tmp/ci-tags.readback.json
 gh api "repos/burncloud/ci/rulesets/${create_id}" > /tmp/ci-tags-create.readback.json
 bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-create.json /tmp/ci-tags-create.readback.json
+gh api "repos/burncloud/ci/rulesets/${latest_delete_id}" > /tmp/ci-tags-latest-delete.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-latest-delete.json /tmp/ci-tags-latest-delete.readback.json
+gh api "repos/burncloud/ci/rulesets/${latest_move_id}" > /tmp/ci-tags-latest-move.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-latest-move.json /tmp/ci-tags-latest-move.readback.json
 jq '.enforcement = "active"' docs/rulesets/ci-main.json | gh api -X PUT "repos/burncloud/ci/rulesets/${main_id}" --input -
 gh api "repos/burncloud/ci/rulesets/${main_id}" > /tmp/ci-main.readback.json
 EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-main.json /tmp/ci-main.readback.json
@@ -80,6 +92,12 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 jq '.enforcement = "active"' docs/rulesets/ci-tags-create.json | gh api -X PUT "repos/burncloud/ci/rulesets/${create_id}" --input -
 gh api "repos/burncloud/ci/rulesets/${create_id}" > /tmp/ci-tags-create.readback.json
 EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-create.json /tmp/ci-tags-create.readback.json
+jq '.enforcement = "active"' docs/rulesets/ci-tags-latest-delete.json | gh api -X PUT "repos/burncloud/ci/rulesets/${latest_delete_id}" --input -
+gh api "repos/burncloud/ci/rulesets/${latest_delete_id}" > /tmp/ci-tags-latest-delete.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-latest-delete.json /tmp/ci-tags-latest-delete.readback.json
+jq '.enforcement = "active"' docs/rulesets/ci-tags-latest-move.json | gh api -X PUT "repos/burncloud/ci/rulesets/${latest_move_id}" --input -
+gh api "repos/burncloud/ci/rulesets/${latest_move_id}" > /tmp/ci-tags-latest-move.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-latest-move.json /tmp/ci-tags-latest-move.readback.json
 ```
 
 不要把改成 `active` 的 JSON 提交回仓库。
@@ -160,12 +178,12 @@ required workflow 一次只用一个 `working-directory`，默认是仓库根。
 ```yaml
 jobs:
   foo:
-    uses: burncloud/ci/.github/workflows/rust.yml@vX.Y.Z
+    uses: burncloud/ci/.github/workflows/rust.yml@latest
     with:
       working-directory: crates/foo
       concurrency-key: foo
   bar:
-    uses: burncloud/ci/.github/workflows/rust.yml@vX.Y.Z
+    uses: burncloud/ci/.github/workflows/rust.yml@latest
     with:
       working-directory: crates/bar
       concurrency-key: bar
@@ -190,7 +208,7 @@ jobs:
 
 ## `burncloud/ci`
 
-免费套餐下不要用这一节保护本仓库。本仓库用上面的 `ci-main`、`ci-tags` 和 `ci-tags-create`。下面这份组织 JSON 只在升级到 Team 之后才可能导入，而且必需检查不能只留 `lint-workflows`，要换成 `ci-main.json` 里的实测名字。
+免费套餐下不要用这一节保护本仓库。本仓库用上面的 `ci-main`、`ci-tags`、`ci-tags-create`、`ci-tags-latest-delete` 和 `ci-tags-latest-move`。下面这份组织 JSON 只在升级到 Team 之后才可能导入，而且必需检查不能只留 `lint-workflows`，要换成 `ci-main.json` 里的实测名字。
 
 在通用规则之外再加一条只匹配仓库名 `ci` 的规则集。文件里现在的必需检查只有 `lint-workflows`。导入前改成 `ci-main.json` 里的实测名字，并把批准、Code Owner、last push approval 和线程解决跟 `ci-main.json` 对齐。bypass 仍是组织管理员，模式是 `pull_request`。
 

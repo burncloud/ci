@@ -1,0 +1,19 @@
+{
+  "name": "ci-tags-latest-delete",
+  "target": "tag",
+  "enforcement": "disabled",
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/tags/latest"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    }
+  ]
+}
