@@ -1,8 +1,8 @@
 # burncloud/ci
 
-BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。组织规则集应把本仓库的 `rust.yml` 配成 required workflow，并钉死到不可变 tag 或提交 SHA。调用方仓库里的 YAML 不能当成安全边界：它可以改 `protected-paths`、换掉 `uses`，或写同名空 job。
+BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。现在走 GitHub 免费套餐：清单仓库保持公开，用 `uses` 钉完整 SHA 或不可变 tag，再配单仓库规则集和 CODEOWNERS。组织级 required workflow 需要 Team，写在 [docs/org-ruleset.md](docs/org-ruleset.md)，升级之后再用。调用方仓库里的 YAML 挡不住改检查：PR 可以改 `protected-paths`、换掉 `uses`，或写同名空 job。改工作流靠 CODEOWNERS 审批。
 
-调用方仍然可以放这一份，方便人读，并在 required workflow 还没启用时先跑起来：
+调用方放这一份。工作流不要命名为 `Rust`，否则并发组会撞名。模板用 `name: CI`：
 
 ```yaml
 name: CI
@@ -25,7 +25,7 @@ jobs:
       run-mutants: false
 ```
 
-规则集启用 required workflow 之后，把这份模板里的 `uses` job 删掉。留着会和注入的 `rust.yml` 各跑一遍。
+升级到 Team 并启用组织级 required workflow 之后，再删掉这份 `uses` job，否则会和注入的 `rust.yml` 各跑一遍。免费套餐下留着这个 job，它就是清单仓库的 CI。
 
 插件仓库要额外检查 wasm 目标时再传 `targets`。这一项不放进上面的通用模板。只检查库和二进制，不编译测试：
 
@@ -39,7 +39,7 @@ jobs:
 
 仓库根要提交 `rust-toolchain.toml`，不要依赖浮动的 `stable`。工作流先读这个文件（仓库根优先，其次是 `working-directory`），没有才用 `toolchain` 输入。文件本身在默认受保护路径里。
 
-`working-directory` 默认是仓库根。一个仓库里有多个 crate 时，不要共用一个叫 `rust` 的 job，见 [docs/org-ruleset.md](docs/org-ruleset.md)。并发组是 `rust-${{ github.workflow }}-${{ PR 号或 ref }}-${{ inputs.concurrency-key }}`。直接触发时工作流名是 `Rust`；`uses` 调用时是调用方工作流的名字。两边都不传 key 也不会合成同一个组。同一次工作流里如果调用两次，看到的工作流名相同，每次要传不同的 `concurrency-key`，否则后一次会取消整次运行。直接由 `pull_request` 触发时 key 留空，同一 PR 的新提交仍会取消旧运行。
+`working-directory` 默认是仓库根。一个仓库里有多个 crate 时，不要共用一个叫 `rust` 的 job，见 [docs/org-ruleset.md](docs/org-ruleset.md)。并发组是 `rust-${{ github.workflow }}-${{ PR 号或 ref }}-${{ inputs.concurrency-key }}`。直接触发时工作流名是 `Rust`；`uses` 调用时是调用方工作流的名字。调用方的工作流不要命名为 `Rust`，否则和直接触发或 required workflow 注入的组名相同，两边会互相取消。同一次工作流里如果调用两次，看到的工作流名相同，每次要传不同的 `concurrency-key`，否则后一次会取消整次运行。直接由 `pull_request` 触发时 key 留空，同一 PR 的新提交仍会取消旧运行。
 
 ## 版本怎么固定
 
@@ -149,4 +149,4 @@ actionlint -shellcheck "$(command -v shellcheck)"
 
 ## 下一步
 
-`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用不可变 ref。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。组织规则集先按 [docs/org-ruleset.md](docs/org-ruleset.md) 以 `evaluate` 导入。`uses` 调用的检查名已经在 template 上看到，是 `rust / lint / fmt` 这种三段式。required workflow 注入后的检查名还没核对，打 `v1` 之前视为待验证。规则集启用之后删掉 template 里的 `uses` job。
+`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用不可变 ref。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。清单仓库保持公开，按 [docs/org-ruleset.md](docs/org-ruleset.md) 配单仓库规则集和 CODEOWNERS。`uses` 调用的检查名已经在 template 上看到，是 `rust / lint / fmt` 这种三段式。组织级 required workflow 仍是升级到 Team 之后的选项，注入后的检查名还没核对。
