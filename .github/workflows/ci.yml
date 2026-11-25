@@ -237,6 +237,269 @@ jobs:
           reject_ref 0123456789abcdef0123456789abcdef012345678
           reject_ref 0123456789abcdef0123456789abcdef0123456g
 
+      - name: Check clippy and comments
+        run: |
+          set -euo pipefail
+          root=$(pwd)
+          rustup component add clippy >/dev/null
+
+          pass_comments=$(mktemp -d)
+          cat > "$pass_comments/lib.rs" <<'EOF'
+          // SPDX-License-Identifier: MIT OR Apache-2.0
+          // Copyright 2026 BurnCloud
+
+          //! Crate level.
+
+          /// Public addition.
+          #[must_use]
+          pub const fn add(left: i64, right: i64) -> i64 {
+              // EXTERNAL: https://doc.rust-lang.org/std/primitive.i64.html#method.saturating_add
+              left.saturating_add(right)
+          }
+
+          /// Crate visible.
+          pub(crate) fn hidden() -> i32 {
+              1
+          }
+
+          /// Documented.
+          #[derive(
+              Clone,
+              Copy,
+          )]
+          pub struct Pair {
+              /// Left.
+              pub left: i32,
+          }
+
+          pub mod inner {
+              //! Nested.
+
+              /// Visible.
+              pub const N: i32 = 4;
+
+              pub fn text() -> &'static str {
+                  let cooked = "http://example.com/a // inside";
+                  let raw = r#" // not a comment "#;
+                  let raw_hash = r##" /* still text */ "##;
+                  let byte_str = b"//";
+                  let cstr = c"//";
+                  let raw_byte = br#"//"#;
+                  let raw_c = cr#"//"#;
+                  let ch = '/';
+                  let quote = '\'';
+                  let slash_slash = '//';
+                  let byte_ch = b'/';
+                  let escaped = "foo\"//bar";
+                  let multi = "foo
+          // still inside
+          bar";
+                  let cont = "foo \
+          // still inside";
+                  let _ = (cooked, raw, raw_hash, byte_str, cstr, raw_byte, raw_c, ch, quote, slash_slash, byte_ch, escaped, multi, cont);
+                  fn f<'a>(s: &'a str) -> &'a str { s }
+                  let _ = f("/* not a comment */ // neither");
+                  "ok"
+              }
+          }
+          EOF
+          python3 "$root/scripts/check-comments.py" "$pass_comments"
+          python3 "$root/scripts/check-comments.py" "$root"
+
+          fail_comments() {
+            local label="$1"
+            local needle="$2"
+            local src="$3"
+            local dir
+            dir=$(mktemp -d)
+            printf '%s\n' "$src" > "$dir/lib.rs"
+            local status=0
+            local out
+            out=$(python3 "$root/scripts/check-comments.py" "$dir" 2>&1) || status=$?
+            if [[ "$status" -eq 0 ]]; then
+              echo "预期 ${label} 失败。" >&2
+              printf '%s\n' "$out" >&2
+              exit 1
+            fi
+            if ! grep -F -e "$needle" >/dev/null <<<"$out"; then
+              echo "预期 ${label} 的输出包含 ${needle}。" >&2
+              printf '%s\n' "$out" >&2
+              exit 1
+            fi
+            echo "PASS comments ${label}"
+          }
+
+          fail_comments narrative 'lib.rs:2:' $'pub fn f() -> i32 {\n    // adds nothing\n    1\n}\n'
+          fail_comments block 'lib.rs:2:' $'pub fn f() -> i32 {\n    /* note */\n    1\n}\n'
+          fail_comments private-doc 'lib.rs:1:' $'/// hidden\nfn f() -> i32 { 1 }\n'
+          fail_comments blank-line 'lib.rs:1:' $'/// hidden\n\npub fn f() -> i32 { 1 }\n'
+          fail_comments late-inner 'lib.rs:5:' $'mod m {\n    pub fn f() -> i32 {\n        1\n    }\n    //! late\n}\n'
+          fail_comments bad-external 'lib.rs:2:' $'pub fn f() -> i32 {\n    // EXTERNAL: http://example.com\n    1\n}\n'
+          fail_comments variant-doc 'lib.rs:2:' $'pub enum E {\n    /// Variant\n    A,\n}\n'
+
+          string_dir=$(mktemp -d)
+          printf '%s\n' $'pub fn f() -> i32 {\n    let _ = "http://example.com";\n    // real\n    1\n}\n' > "$string_dir/lib.rs"
+          string_out=$(python3 "$root/scripts/check-comments.py" "$string_dir" 2>&1) || string_status=$?
+          string_status=${string_status:-0}
+          if [[ "$string_status" -eq 0 ]]; then
+            echo "预期字符串后面的注释失败。" >&2
+            exit 1
+          fi
+          if ! grep -F -e 'lib.rs:3:' >/dev/null <<<"$string_out"; then
+            echo "预期字符串后面的注释报在第 3 行。" >&2
+            printf '%s\n' "$string_out" >&2
+            exit 1
+          fi
+          if grep -F -e 'lib.rs:2:' >/dev/null <<<"$string_out"; then
+            echo "字符串里的 // 不应报错。" >&2
+            printf '%s\n' "$string_out" >&2
+            exit 1
+          fi
+          echo "PASS comments string"
+
+          good=$(mktemp -d)
+          mkdir -p "$good/src" "$good/examples"
+          printf '%s\n' '[package]' 'name = "sample"' 'version = "0.1.0"' 'edition = "2021"' > "$good/Cargo.toml"
+          cat > "$good/src/lib.rs" <<'EOF'
+          #[must_use]
+          pub const fn answer() -> i32 {
+              7
+          }
+
+          #[derive(Clone, Copy)]
+          pub enum Color {
+              Red,
+              Blue,
+              Green,
+          }
+
+          #[must_use]
+          pub const fn code(color: Color) -> i32 {
+              match color {
+                  Color::Red => 1,
+                  Color::Blue => 2,
+                  Color::Green => 3,
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::{answer, code, Color};
+
+              #[allow(dead_code)]
+              const fn unused_helper() -> i32 {
+                  1
+              }
+
+              const fn maybe(n: i32) -> Option<i32> {
+                  if n < 0 { None } else { Some(n) }
+              }
+
+              fn explode() -> i32 {
+                  panic!("boom")
+              }
+
+              fn later() -> i32 {
+                  todo!("later")
+              }
+
+              fn missing() -> i32 {
+                  unimplemented!("missing")
+              }
+
+              #[test]
+              fn restriction_lints_are_allowed() {
+                  assert_eq!(maybe(1).unwrap(), 1);
+                  assert_eq!(maybe(2).expect("two"), 2);
+                  if answer() == 7 {
+                      assert_eq!(code(Color::Red), 1);
+                  } else {
+                      let _ = explode();
+                      let _ = later();
+                      let _ = missing();
+                  }
+                  let color = Color::Red;
+                  let kind = match color {
+                      Color::Red => 1,
+                      _ => 0,
+                  };
+                  assert_eq!(kind, 1);
+                  assert_eq!(answer(), 7);
+              }
+          }
+          EOF
+          printf '%s\n' 'fn main() {}' > "$good/examples/show.rs"
+          cargo generate-lockfile --manifest-path "$good/Cargo.toml" >/dev/null
+          good_out=$(bash "$root/scripts/run-clippy.sh" "$good" 2>&1)
+          grep -F -e 'clippy: 非测试 --lib --examples' >/dev/null <<<"$good_out"
+          grep -F -e 'clippy: 测试 --tests' >/dev/null <<<"$good_out"
+          echo "PASS clippy good"
+
+          bin=$(mktemp -d)
+          mkdir -p "$bin/src"
+          printf '%s\n' '[package]' 'name = "binonly"' 'version = "0.1.0"' 'edition = "2021"' > "$bin/Cargo.toml"
+          cat > "$bin/src/main.rs" <<'EOF'
+          fn main() {}
+
+          #[cfg(test)]
+          mod tests {
+              fn maybe(n: i32) -> Option<i32> {
+                  if n < 0 { None } else { Some(n) }
+              }
+
+              #[test]
+              fn allows_unwrap() {
+                  assert_eq!(maybe(1).unwrap(), 1);
+              }
+          }
+          EOF
+          cargo generate-lockfile --manifest-path "$bin/Cargo.toml" >/dev/null
+          bin_out=$(bash "$root/scripts/run-clippy.sh" "$bin" 2>&1)
+          grep -F -e 'clippy: 非测试 --bins' >/dev/null <<<"$bin_out"
+          if grep -F -e '--lib' >/dev/null <<<"$bin_out"; then
+            echo "只有二进制的包不能传 --lib。" >&2
+            printf '%s\n' "$bin_out" >&2
+            exit 1
+          fi
+          echo "PASS clippy bin"
+
+          fail_lib() {
+            local label="$1"
+            local needle="$2"
+            local src="$3"
+            local dir
+            dir=$(mktemp -d)
+            mkdir -p "$dir/src"
+            printf '%s\n' '[package]' 'name = "sample"' 'version = "0.1.0"' 'edition = "2021"' > "$dir/Cargo.toml"
+            printf '%s\n' "$src" > "$dir/src/lib.rs"
+            cargo generate-lockfile --manifest-path "$dir/Cargo.toml" >/dev/null
+            local status=0
+            local out
+            out=$(bash "$root/scripts/run-clippy.sh" "$dir" 2>&1) || status=$?
+            if [[ "$status" -eq 0 ]]; then
+              echo "预期 ${label} 失败。" >&2
+              printf '%s\n' "$out" >&2
+              exit 1
+            fi
+            if ! grep -F -e "$needle" >/dev/null <<<"$out"; then
+              echo "预期 ${label} 的输出包含 ${needle}。" >&2
+              printf '%s\n' "$out" >&2
+              exit 1
+            fi
+            echo "PASS clippy ${label}"
+          }
+
+          fail_lib unwrap '-D clippy::unwrap-used' $'#[must_use]\npub fn bad() -> i32 { Some(1).unwrap() }\n'
+          fail_lib expect '-D clippy::expect-used' $'#[must_use]\npub fn bad() -> i32 { Some(1).expect("e") }\n'
+          fail_lib panic '-D clippy::panic' $'pub fn bad() { panic!("x"); }\n'
+          fail_lib todo '-D clippy::todo' $'pub fn bad() { todo!("x"); }\n'
+          fail_lib unimplemented '-D clippy::unimplemented' $'pub fn bad() { unimplemented!("x"); }\n'
+          fail_lib wildcard '-D clippy::wildcard-enum-match-arm' $'#[derive(Clone, Copy)]\npub enum Color { Red, Blue, Green }\n#[must_use]\npub const fn code(color: Color) -> i32 {\n    match color { Color::Red => 1, _ => 0 }\n}\n'
+          fail_lib allow '-D clippy::allow-attributes-without-reason' $'#[allow(dead_code)]\nconst fn hidden() -> i32 { 1 }\n#[must_use]\npub const fn answer() -> i32 { 7 }\n'
+          fail_lib dead '-D dead-code' $'const fn hidden() -> i32 { 1 }\n#[must_use]\npub const fn answer() -> i32 { 7 }\n'
+          fail_lib must-use '-D unused-must-use' $'#[must_use]\npub const fn answer() -> i32 { 7 }\npub const fn drop_answer() { answer(); }\n'
+          fail_lib test-dead '-D dead-code' $'#[must_use]\npub const fn answer() -> i32 { 7 }\n#[cfg(test)]\nmod tests {\n    const fn never() -> i32 { 1 }\n    #[test]\n    fn ok() { assert_eq!(super::answer(), 7); }\n}\n'
+          fail_lib test-must-use '-D unused-must-use' $'#[must_use]\npub const fn answer() -> i32 { 7 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn drops() { super::answer(); }\n}\n'
   # 两次调用的 github.workflow 都是本工作流的名字 CI。
   # key 必须不同，组名才分别是 rust-CI-<PR>-self-test 和 rust-CI-<PR>-caller-with，
   # 否则后一次会取消整次运行。

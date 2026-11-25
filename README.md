@@ -75,8 +75,30 @@ jobs:
 | job | 做什么 |
 | --- | --- |
 | `fmt` | `cargo fmt --all --check` |
-| `clippy` | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -D clippy::allow_attributes_without_reason` |
+| `clippy` | 按 `cargo metadata` 把非测试目标和 `--tests` 分开跑 `cargo clippy --locked --workspace --all-features`。两边都是 `-D warnings -W clippy::pedantic`。非测试额外拒绝 `unwrap`、`expect`、`panic!`、`todo!`、`unimplemented!`、通配枚举臂，以及没有 `reason` 的 `#[allow]`。见下文。 |
+| `comments` | 扫描调用方仓库全部 `*.rs`，拒绝叙述性注释。见下文。 |
 | `unsafe` | 读每个 crate 的 `Cargo.toml`。必须有 `[lints.rust] unsafe_code = "forbid"`（或继承 workspace 的同名设置），由编译器在 `cargo clippy` / `cargo test` 时强制。需要 unsafe 的包把包名写进受保护的 `unsafe-crates.txt`。不再扫描源码文本。 |
+
+#### 错误变 lint
+
+审查里被拒绝、反复出现的问题，就把它变成一条 lint 或检查，而不是靠人记住。上面的 clippy 分组和 `comments` 就是按这个原则收进来的。
+
+`lint / clippy` 不打开 `missing_docs`。目标只选 `cargo metadata` 里真实存在的 kind：工作区里没有任何库时不能加 `--lib`，否则 cargo 会直接失败。没有的二进制、example、bench 同样不加。
+
+非测试那一次：有库加 `--lib`，有二进制加 `--bins`，有 example 加 `--examples`，每个 `[[bench]]` 加 `--bench <name>`。不用 `--benches`。那个开关会把库和二进制再按测试套件编一遍，`#[cfg(test)]` 里的代码会被算进非测试检查。这一次在原有 `-D warnings -W clippy::pedantic` 之上拒绝 `clippy::unwrap_used`、`clippy::expect_used`、`clippy::panic`、`clippy::todo`、`clippy::unimplemented`、`clippy::wildcard_enum_match_arm`、`clippy::allow_attributes_without_reason`，以及 `unused_must_use`、`dead_code`。
+
+测试那一次只在存在 `test = true` 的目标或 `tests/` 集成测试时跑 `--tests`。上面七个 clippy 限制类 lint 用 `-A` 放行，所以测试里可以写 `unwrap`、`expect`、`panic!`、`todo!`、`unimplemented!`、通配枚举臂，以及不写 `reason` 的 `#[allow]`。`unused_must_use` 和 `dead_code` 仍然拒绝。`-D warnings -W clippy::pedantic` 保持不变。
+
+`build.rs` 跟着触发它的那次编译使用同一组 flag。普通 crate 会先做非测试编译，因此构建脚本走严格那一组。
+
+`lint / comments` 跑 [`scripts/check-comments.py`](scripts/check-comments.py)，扫调用方仓库全部 `*.rs`，跳过 `target/`、`vendor/` 和 `.burncloud-ci/`。只允许这四类：
+
+- 文件最前面的许可证行：`// SPDX-License-Identifier: ...` 和 `// Copyright ...`。
+- 紧挨一个带 `pub` 关键字的项的 `///`。中间只能是属性或其他 `///`，不能空一行。没有 `pub` 的枚举变体不能写 `///`。
+- 文件或 `mod` 正文开头、任何条目前的 `//!`。`#![...]` 可以写在这些 `//!` 前面。
+- 外部约束。注释文本固定为 `// EXTERNAL: https://...`，可以单独成行，也可以写在代码行末尾。`https://` 后面不能有空格。
+
+其余 `//` 和 `/* */`（包括 `/** */`）都报 `文件:行号`。字符串、原始字符串、字节串、c 字符串和字符字面量里的 `//` 会跳过。
 
 ### 2. 测试 `test.yml`
 
@@ -114,11 +136,11 @@ jobs:
 | job | 做什么 |
 | --- | --- |
 | `semver` | `cargo semver-checks --baseline-rev`。`auto` 在 pull request 上用 base sha，否则用最新 tag。基线上没有该清单时视为新 crate，说明后跳过。 |
-| `capabilities` | 只打印能力报告，不阻断。没有 `reason` 的 `#[allow]` 由 lint 层的 clippy 拒绝。 |
+| `capabilities` | 只打印能力报告，不阻断。非测试代码里没有 `reason` 的 `#[allow]` 由 lint 层的 clippy 拒绝。 |
 
 能力路线图：
 
-1. 现在：报告 `std::fs`、`std::net`、`std::process`、`std::env`、`std::thread`、`std::os` 以及对应的 tokio 路径。报告不阻断。不写理由的 `allow` 放在 clippy 里拒绝。
+1. 现在：报告 `std::fs`、`std::net`、`std::process`、`std::env`、`std::thread`、`std::os` 以及对应的 tokio 路径。报告不阻断。非测试代码里不写理由的 `allow` 放在 clippy 里拒绝。
 2. 下一步：把报告和一份受保护的能力清单对比，未声明的 `std::fs` / `net` / `process` 直接失败。
 3. 再下一步：用 capability crate 或 sandbox 表达能力，而不是只靠文本扫描。
 
@@ -142,7 +164,8 @@ jobs:
 
 ```bash
 cargo fmt --all --check
-cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -D clippy::allow_attributes_without_reason
+bash scripts/run-clippy.sh tests/fixture
+python3 scripts/check-comments.py .
 bash scripts/check-unsafe.sh tests/fixture
 cargo test --locked --workspace --all-targets --all-features
 cargo test --locked --workspace --doc

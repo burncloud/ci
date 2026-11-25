@@ -11,6 +11,7 @@ DIR = ROOT / "docs" / "rulesets"
 LAYERS = [
     "lint / fmt",
     "lint / clippy",
+    "lint / comments",
     "lint / unsafe",
     "test / cargo-test",
     "test / doc-test",

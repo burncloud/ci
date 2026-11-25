@@ -49,6 +49,10 @@
             "integration_id": 15368
           },
           {
+            "context": "rust / lint / comments",
+            "integration_id": 15368
+          },
+          {
             "context": "rust / lint / unsafe",
             "integration_id": 15368
           },
