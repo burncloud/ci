@@ -248,7 +248,7 @@ def tokenize(src):
             tokens.append(Token("ident", line, line, src[index:end]))
             index = end
             continue
-        if ch in "#![]{}":
+        if ch in "#![]{}()<>=,":
             tokens.append(Token("punct", line, line, ch))
             index += 1
             continue
@@ -269,7 +269,7 @@ class FileChecker:
         self.rel = rel
         self.tokens = tokens
         self.errors = []
-        self.frames = [{"kind": "file", "preamble": True}]
+        self.frames = [{"kind": "file", "preamble": True, "exportable": True}]
 
     def error(self, line, message):
         self.errors.append((self.rel, line, message))
@@ -280,14 +280,39 @@ class FileChecker:
             cursor -= 1
         return cursor
 
-    def opens_module(self, brace):
-        name_at = self.prev_solid(brace)
-        if name_at < 0 or self.tokens[name_at].kind != "ident":
+    def next_solid(self, index):
+        cursor = index + 1
+        while cursor < len(self.tokens) and self.tokens[cursor].kind in COMMENT_KINDS:
+            cursor += 1
+        return cursor
+
+    def item_keyword(self, brace):
+        cursor = brace - 1
+        while cursor >= 0 and brace - cursor <= 40:
+            token = self.tokens[cursor]
+            if token.text in {"{", "}"}:
+                return -1
+            if token.kind == "ident" and token.text in {
+                "struct",
+                "enum",
+                "union",
+                "mod",
+                "trait",
+                "impl",
+                "fn",
+            }:
+                return cursor
+            cursor -= 1
+        return -1
+
+    def bare_pub_item(self, keyword):
+        cursor = self.prev_solid(keyword)
+        if cursor >= 0 and self.tokens[cursor].kind == "ident" and self.tokens[cursor].text == "unsafe":
+            cursor = self.prev_solid(cursor)
+        if cursor < 0 or self.tokens[cursor].text != "pub" or self.tokens[cursor].kind != "ident":
             return False
-        mod_at = self.prev_solid(name_at)
-        if mod_at < 0:
-            return False
-        return self.tokens[mod_at].kind == "ident" and self.tokens[mod_at].text == "mod"
+        nxt = self.next_solid(cursor)
+        return nxt >= len(self.tokens) or self.tokens[nxt].text != "("
 
     def is_attr(self, index):
         token = self.tokens[index]
@@ -322,60 +347,83 @@ class FileChecker:
             return
         self.error(token.start, "不允许的注释")
 
-    def consume_attr(self, index):
+    def consume_attr(self, index, report):
         end_line = self.tokens[index].end
         if self.is_inner_attr(index):
             index += 2
         else:
             index += 1
         if index >= len(self.tokens) or self.tokens[index].text != "[":
-            return index, end_line
+            return index, end_line, False
         depth = 0
+        prev_ident = ""
+        is_doc = False
         while index < len(self.tokens):
             token = self.tokens[index]
             end_line = token.end
             if token.text == "[":
                 depth += 1
+                prev_ident = ""
                 index += 1
                 continue
             if token.text == "]":
                 depth -= 1
+                prev_ident = ""
                 index += 1
                 if depth == 0:
-                    return index, end_line
+                    return index, end_line, is_doc
                 continue
-            if token.kind in COMMENT_KINDS:
-                self.note_attr_comment(token)
+            if token.kind == "ident":
+                prev_ident = token.text
+            elif token.text == "=" and prev_ident == "doc":
+                is_doc = True
+                prev_ident = ""
+            elif token.kind in COMMENT_KINDS:
+                if report:
+                    self.note_attr_comment(token)
+                prev_ident = ""
+            else:
+                prev_ident = ""
             index += 1
-        return index, end_line
+        return index, end_line, is_doc
 
-    def take_outer_docs(self, index):
-        group = [self.tokens[index]]
-        prev_end = self.tokens[index].end
-        index += 1
-        while (
-            index < len(self.tokens)
-            and self.tokens[index].kind == "outer_doc"
-            and self.tokens[index].start <= prev_end + 1
-        ):
-            group.append(self.tokens[index])
-            prev_end = self.tokens[index].end
-            index += 1
-        while (
-            index < len(self.tokens)
-            and self.is_attr(index)
-            and self.tokens[index].start <= prev_end + 1
-        ):
-            index, prev_end = self.consume_attr(index)
-        if (
-            index < len(self.tokens)
-            and self.tokens[index].kind == "ident"
-            and self.tokens[index].text == "pub"
-            and self.tokens[index].start <= prev_end + 1
-        ):
-            return index
-        for token in group:
-            self.error(token.start, "文档注释必须紧挨 pub 项")
+    def attr_is_doc(self, index):
+        _index, _end_line, is_doc = self.consume_attr(index, False)
+        return is_doc
+
+    def docs_are_public(self, index, prev_end):
+        if index >= len(self.tokens):
+            return False
+        token = self.tokens[index]
+        if token.kind != "ident" or token.text != "pub" or token.start > prev_end + 1:
+            return False
+        if not self.frames[-1]["exportable"]:
+            return False
+        nxt = self.next_solid(index)
+        return nxt >= len(self.tokens) or self.tokens[nxt].text != "("
+
+    def take_docs(self, index):
+        pieces = []
+        prev_end = None
+        while index < len(self.tokens):
+            token = self.tokens[index]
+            if prev_end is not None and token.start > prev_end + 1:
+                break
+            if token.kind == "outer_doc":
+                pieces.append(token.start)
+                prev_end = token.end
+                index += 1
+                continue
+            if self.is_attr(index) and not self.is_inner_attr(index):
+                start_line = token.start
+                index, prev_end, is_doc = self.consume_attr(index, True)
+                if is_doc:
+                    pieces.append(start_line)
+                continue
+            break
+        if pieces and prev_end is not None and not self.docs_are_public(index, prev_end):
+            for line in pieces:
+                self.error(line, "文档注释必须紧挨公开 API")
         return index
 
     def walk(self):
@@ -393,7 +441,7 @@ class FileChecker:
                 continue
             if token.kind == "outer_doc":
                 frame["preamble"] = False
-                index = self.take_outer_docs(index)
+                index = self.take_docs(index)
                 continue
             if token.kind == "line" and is_external(token.text):
                 index += 1
@@ -403,14 +451,32 @@ class FileChecker:
                 frame["preamble"] = False
                 index += 1
                 continue
+            if self.is_inner_attr(index):
+                start_line = token.start
+                index, _end_line, is_doc = self.consume_attr(index, True)
+                if is_doc and not (frame["preamble"] and frame["kind"] in {"file", "mod"}):
+                    self.error(start_line, "模块文档必须在文件或模块开头")
+                continue
             if self.is_attr(index):
-                if not self.is_inner_attr(index):
+                if self.attr_is_doc(index):
                     frame["preamble"] = False
-                index, _end = self.consume_attr(index)
+                    index = self.take_docs(index)
+                    continue
+                frame["preamble"] = False
+                index, _end_line, _is_doc = self.consume_attr(index, True)
                 continue
             if token.text == "{":
-                kind = "mod" if self.opens_module(index) else "block"
-                self.frames.append({"kind": kind, "preamble": kind == "mod"})
+                keyword = self.item_keyword(index)
+                kind = "block"
+                exportable = frame["exportable"]
+                if keyword >= 0:
+                    word = self.tokens[keyword].text
+                    if word == "mod":
+                        kind = "mod"
+                        exportable = frame["exportable"] and self.bare_pub_item(keyword)
+                    elif word in {"struct", "enum", "union", "trait"}:
+                        exportable = frame["exportable"] and self.bare_pub_item(keyword)
+                self.frames.append({"kind": kind, "preamble": kind == "mod", "exportable": exportable})
                 index += 1
                 continue
             if token.text == "}":
@@ -430,9 +496,11 @@ def check_source(rel, text):
 
 
 def rust_files(root):
+    root = root.resolve()
     found = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS]
+        if Path(dirpath).resolve() == root:
+            dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS]
         for name in filenames:
             if name.endswith(".rs"):
                 found.append(Path(dirpath) / name)

@@ -14,7 +14,9 @@
       "include": [
         "refs/tags/v*"
       ],
-      "exclude": []
+      "exclude": [
+        "refs/tags/latest"
+      ]
     }
   },
   "rules": [

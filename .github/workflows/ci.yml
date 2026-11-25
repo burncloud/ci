@@ -230,9 +230,12 @@ jobs:
           accept_ref 0123456789ABCDEF0123456789ABCDEF01234567
           accept_ref 0123456789AbCdEf0123456789aBcDeF01234567
           accept_ref v1.0.0
+          accept_ref latest
           reject_ref v1
           reject_ref v1.0
           reject_ref main
+          reject_ref Latest
+          reject_ref latest2
           reject_ref 0123456789abcdef0123456789abcdef0123456
           reject_ref 0123456789abcdef0123456789abcdef012345678
           reject_ref 0123456789abcdef0123456789abcdef0123456g
@@ -257,8 +260,18 @@ jobs:
               left.saturating_add(right)
           }
 
-          /// Crate visible.
-          pub(crate) fn hidden() -> i32 {
+          #[doc = "Answer via an attribute."]
+          pub const fn answer() -> i32 {
+              7
+          }
+
+          #[cfg_attr(unix, doc = "Unix note.")]
+          pub const fn unix_note() -> i32 {
+              1
+          }
+
+          #[doc(hidden)]
+          fn helper() -> i32 {
               1
           }
 
@@ -336,6 +349,14 @@ jobs:
           fail_comments late-inner 'lib.rs:5:' $'mod m {\n    pub fn f() -> i32 {\n        1\n    }\n    //! late\n}\n'
           fail_comments bad-external 'lib.rs:2:' $'pub fn f() -> i32 {\n    // EXTERNAL: http://example.com\n    1\n}\n'
           fail_comments variant-doc 'lib.rs:2:' $'pub enum E {\n    /// Variant\n    A,\n}\n'
+          fail_comments doc-attr-private 'lib.rs:1:' $'#[doc = "hidden"]\nfn f() -> i32 { 1 }\n'
+          fail_comments cfg-attr-doc-private 'lib.rs:1:' $'#[cfg_attr(unix, doc = "hidden")]\nfn f() -> i32 { 1 }\n'
+          fail_comments doc-attr-blank 'lib.rs:1:' $'#[doc = "hidden"]\n\npub fn f() -> i32 { 1 }\n'
+          fail_comments pub-crate 'lib.rs:1:' $'/// hidden\npub(crate) fn f() -> i32 { 1 }\n'
+          fail_comments pub-super 'lib.rs:1:' $'/// hidden\npub(super) fn f() -> i32 { 1 }\n'
+          fail_comments pub-in 'lib.rs:1:' $'/// hidden\npub(in crate::hidden) fn f() -> i32 { 1 }\n'
+          fail_comments private-mod 'lib.rs:2:' $'mod hidden {\n    /// secret\n    pub fn f() -> i32 { 1 }\n}\n'
+          fail_comments doc-attr-private-mod 'lib.rs:2:' $'mod hidden {\n    #[doc = "secret"]\n    pub fn f() -> i32 { 1 }\n}\n'
 
           string_dir=$(mktemp -d)
           printf '%s\n' $'pub fn f() -> i32 {\n    let _ = "http://example.com";\n    // real\n    1\n}\n' > "$string_dir/lib.rs"
@@ -356,6 +377,36 @@ jobs:
             exit 1
           fi
           echo "PASS comments string"
+
+          root_skip=$(mktemp -d)
+          mkdir -p "$root_skip/target" "$root_skip/vendor" "$root_skip/crate/target"
+          printf '%s\n' 'pub fn f() {' '    // narrative' '}' > "$root_skip/target/lib.rs"
+          printf '%s\n' 'pub fn f() {' '    // narrative' '}' > "$root_skip/vendor/lib.rs"
+          printf '%s\n' 'pub fn ok() -> i32 { 1 }' > "$root_skip/crate/target/lib.rs"
+          python3 "$root/scripts/check-comments.py" "$root_skip"
+          echo "PASS comments root skip"
+
+          nested_skip=$(mktemp -d)
+          mkdir -p "$nested_skip/crate/target" "$nested_skip/crate/vendor"
+          printf '%s\n' 'pub fn f() {' '    // narrative' '}' > "$nested_skip/crate/target/lib.rs"
+          printf '%s\n' 'pub fn ok() -> i32 { 1 }' > "$nested_skip/crate/vendor/lib.rs"
+          nested_status=0
+          nested_out=$(python3 "$root/scripts/check-comments.py" "$nested_skip" 2>&1) || nested_status=$?
+          if [[ "$nested_status" -eq 0 ]]; then
+            echo "预期嵌套 target 里的注释失败。" >&2
+            exit 1
+          fi
+          if ! grep -F -e 'crate/target/lib.rs:2:' >/dev/null <<<"$nested_out"; then
+            echo "预期嵌套 target 报在 crate/target/lib.rs:2。" >&2
+            printf '%s\n' "$nested_out" >&2
+            exit 1
+          fi
+          if grep -F -e 'crate/vendor/lib.rs:' >/dev/null <<<"$nested_out"; then
+            echo "嵌套 vendor 里的干净文件不应报错。" >&2
+            printf '%s\n' "$nested_out" >&2
+            exit 1
+          fi
+          echo "PASS comments nested skip"
 
           good=$(mktemp -d)
           mkdir -p "$good/src" "$good/examples"

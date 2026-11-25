@@ -173,37 +173,168 @@ def self_test_organization_admin():
         fail("OrganizationAdmin 自测：actor_id 为数字不应当通过")
 
 
+def copied(data):
+    return json.loads(json.dumps(data))
+
+
+def rule_types(data):
+    return [item.get("type") for item in data["rules"]]
+
+
+def ref_spec(data):
+    return data["conditions"]["ref_name"]
+
+
+def tag_shell_problem(data):
+    if data.get("target") != "tag" or data.get("enforcement") != "disabled":
+        return "target 必须是 tag，enforcement 必须是 disabled"
+    return None
+
+
+def vstar_scope_problem(data):
+    shell = tag_shell_problem(data)
+    if shell:
+        return shell
+    spec = ref_spec(data)
+    if spec.get("include") != ["refs/tags/v*"]:
+        return "include 必须只是 refs/tags/v*"
+    if spec.get("exclude") != ["refs/tags/latest"]:
+        return "exclude 必须显式排除 refs/tags/latest"
+    return None
+
+
+def create_problem(data):
+    scope = vstar_scope_problem(data)
+    if scope:
+        return scope
+    if data.get("bypass_actors") != [ADMIN_ALWAYS]:
+        return "只有仓库管理员可以 always bypass"
+    if rule_types(data) != ["creation"]:
+        return "只能有 creation"
+    return None
+
+
+def keep_problem(data):
+    scope = vstar_scope_problem(data)
+    if scope:
+        return scope
+    if data.get("bypass_actors") != []:
+        return "不能有 bypass，否则管理员可以改写或删除标签"
+    if rule_types(data) != ["update", "deletion", "non_fast_forward"]:
+        return "规则必须是 update、deletion、non_fast_forward"
+    update = [item for item in data["rules"] if item.get("type") == "update"]
+    if len(update) != 1 or "parameters" in update[0]:
+        return "update 不要带 parameters"
+    return None
+
+
+def latest_scope_problem(data):
+    shell = tag_shell_problem(data)
+    if shell:
+        return shell
+    spec = ref_spec(data)
+    if spec.get("include") != ["refs/tags/latest"]:
+        return "include 必须只是 refs/tags/latest"
+    if spec.get("exclude") != []:
+        return "exclude 必须为空"
+    return None
+
+
+def latest_delete_problem(data):
+    scope = latest_scope_problem(data)
+    if scope:
+        return scope
+    if data.get("bypass_actors") != []:
+        return "deletion 不能有 bypass"
+    if rule_types(data) != ["deletion"]:
+        return "只能有 deletion"
+    return None
+
+
+def latest_move_problem(data):
+    scope = latest_scope_problem(data)
+    if scope:
+        return scope
+    if data.get("bypass_actors") != [ADMIN_ALWAYS]:
+        return "bypass 必须是仓库管理员 always"
+    if rule_types(data) != ["update", "non_fast_forward", "creation"]:
+        return "规则必须是 update、non_fast_forward、creation"
+    if any(item.get("type") == "deletion" for item in data["rules"]):
+        return "deletion 不能和 bypass 放在同一份规则集"
+    update = [item for item in data["rules"] if item.get("type") == "update"]
+    if len(update) != 1 or "parameters" in update[0]:
+        return "update 不要带 parameters"
+    return None
+
+
+def self_test_tags():
+    create = load("ci-tags-create.json")
+    tags = load("ci-tags.json")
+    delete = load("ci-tags-latest-delete.json")
+    move = load("ci-tags-latest-move.json")
+    if create_problem(create):
+        fail("ci-tags-create 自测：期望 JSON 应当通过")
+    if keep_problem(tags):
+        fail("ci-tags 自测：期望 JSON 应当通过")
+    if latest_delete_problem(delete):
+        fail("ci-tags-latest-delete 自测：期望 JSON 应当通过")
+    if latest_move_problem(move):
+        fail("ci-tags-latest-move 自测：期望 JSON 应当通过")
+    null_bypass = copied(create)
+    null_bypass["bypass_actors"] = None
+    if create_problem(null_bypass) is None:
+        fail("ci-tags-create 自测：bypass 为 null 应当失败")
+    empty_bypass = copied(create)
+    empty_bypass["bypass_actors"] = []
+    if create_problem(empty_bypass) is None:
+        fail("ci-tags-create 自测：空 bypass 应当失败")
+    request_bypass = copied(create)
+    request_bypass["bypass_actors"] = [ADMIN_PR]
+    if create_problem(request_bypass) is None:
+        fail("ci-tags-create 自测：pull_request bypass 应当失败")
+    open_latest = copied(create)
+    open_latest["conditions"]["ref_name"]["exclude"] = []
+    if create_problem(open_latest) is None:
+        fail("ci-tags-create 自测：没有排除 latest 应当失败")
+    wildcard = copied(tags)
+    wildcard["conditions"]["ref_name"]["include"] = ["refs/tags/*"]
+    if keep_problem(wildcard) is None:
+        fail("ci-tags 自测：refs/tags/* 应当失败")
+    movable = copied(tags)
+    movable["bypass_actors"] = [ADMIN_ALWAYS]
+    if keep_problem(movable) is None:
+        fail("ci-tags 自测：有 bypass 应当失败")
+    deletable = copied(delete)
+    deletable["bypass_actors"] = [ADMIN_ALWAYS]
+    if latest_delete_problem(deletable) is None:
+        fail("ci-tags-latest-delete 自测：有 bypass 应当失败")
+    combined = copied(move)
+    combined["rules"] = combined["rules"] + [{"type": "deletion"}]
+    if latest_move_problem(combined) is None:
+        fail("ci-tags-latest-move 自测：deletion 和 bypass 在同一份规则集应当失败")
+    stuck = copied(move)
+    stuck["rules"] = [item for item in stuck["rules"] if item["type"] != "creation"]
+    if latest_move_problem(stuck) is None:
+        fail("ci-tags-latest-move 自测：缺少 creation 应当失败")
+
+
 def main():
     self_test_codeowners()
     self_test_organization_admin()
+    self_test_tags()
     check_codeowners()
     check_branch(load("crate-main.json"), CRATE_CONTEXTS)
     check_branch(load("ci-main.json"), CI_CONTEXTS)
 
-    tags = load("ci-tags.json")
-    if tags["target"] != "tag" or tags["enforcement"] != "disabled":
-        fail("ci-tags: target 必须是 tag，enforcement 必须是 disabled")
-    if tags["bypass_actors"] != []:
-        fail("ci-tags: 不能有 bypass，否则管理员可以改写或删除标签")
-    if tags["conditions"]["ref_name"]["include"] != ["refs/tags/v*"]:
-        fail("ci-tags: ref 必须是 refs/tags/v*")
-    update = rule(tags, "update")
-    if "parameters" in update:
-        fail("ci-tags: tag 的 update 规则不要带 parameters，服务端会丢掉")
-    rule(tags, "deletion")
-    rule(tags, "non_fast_forward")
-    if any(item.get("type") == "creation" for item in tags["rules"]):
-        fail("ci-tags: creation 必须单独成一份规则集")
-
-    create = load("ci-tags-create.json")
-    if create["target"] != "tag" or create["enforcement"] != "disabled":
-        fail("ci-tags-create: target 必须是 tag，enforcement 必须是 disabled")
-    if create["bypass_actors"] != [ADMIN_ALWAYS]:
-        fail("ci-tags-create: 只有仓库管理员可以 always bypass")
-    if create["conditions"]["ref_name"]["include"] != ["refs/tags/v*"]:
-        fail("ci-tags-create: ref 必须是 refs/tags/v*")
-    if [item["type"] for item in create["rules"]] != ["creation"]:
-        fail("ci-tags-create: 只能有 creation 规则")
+    for name, check in (
+        ("ci-tags.json", keep_problem),
+        ("ci-tags-create.json", create_problem),
+        ("ci-tags-latest-delete.json", latest_delete_problem),
+        ("ci-tags-latest-move.json", latest_move_problem),
+    ):
+        problem = check(load(name))
+        if problem:
+            fail(f"{name}: {problem}")
 
     for path in DIR.glob("*.json"):
         data = json.loads(path.read_text())

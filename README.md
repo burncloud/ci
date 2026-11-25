@@ -1,6 +1,6 @@
 # burncloud/ci
 
-BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。现在走 GitHub 免费套餐：清单仓库保持公开，用 `uses` 钉 40 位完整 SHA 或 `vX.Y.Z` 标签，再配单仓库规则集和 CODEOWNERS。禁止 `v1` 这类浮动标签，也禁止分支名。组织级 required workflow 需要 Team，写在 [docs/org-ruleset.md](docs/org-ruleset.md)，升级之后再用。调用方仓库里的 YAML 挡不住改检查：PR 可以改 `protected-paths`、换掉 `uses`，或写同名空 job。改工作流靠 CODEOWNERS 审批。`rustburn` 负责写代码，是 owner，紧急时走仓库管理员的 pull request bypass。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。
+BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。现在走 GitHub 免费套餐：清单仓库保持公开，调用方 `uses` 用 `@latest`，再配单仓库规则集和 CODEOWNERS。要钉死某一次发布就用 40 位 SHA 或 `vX.Y.Z`。禁止 `v1` 这类别的浮动标签，也禁止分支名。组织级 required workflow 需要 Team，写在 [docs/org-ruleset.md](docs/org-ruleset.md)，升级之后再用。调用方仓库里的 YAML 挡不住改检查：PR 可以改 `protected-paths`、换掉 `uses`，或写同名空 job。改工作流靠 CODEOWNERS 审批。`rustburn` 负责写代码，是 owner，紧急时走仓库管理员的 pull request bypass。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。
 
 调用方放这一份。工作流不要命名为 `Rust`，否则并发组会撞名。模板用 `name: CI`：
 
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   rust:
-    uses: burncloud/ci/.github/workflows/rust.yml@<40 位 SHA 或 vX.Y.Z>
+    uses: burncloud/ci/.github/workflows/rust.yml@latest
     with:
       run-proptest: false
       run-fuzz: false
@@ -37,7 +37,7 @@ jobs:
 ```yaml
 jobs:
   rust:
-    uses: burncloud/ci/.github/workflows/rust.yml@<40 位 SHA 或 vX.Y.Z>
+    uses: burncloud/ci/.github/workflows/rust.yml@latest
     with:
       targets: wasm32-wasip2
 ```
@@ -48,15 +48,18 @@ jobs:
 
 ## 版本怎么固定
 
-调用方 `uses` 只允许两种 ref：40 位完整 SHA，或 `vX.Y.Z`。禁止 `v1` 这类浮动标签，也禁止分支名。SHA 接受大小写十六进制，`v` 只小写。正则是 `^([0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$`，实现在 [`scripts/check-pinned-ref.sh`](scripts/check-pinned-ref.sh)。
+调用方 `uses` 用 `@latest`。也可以钉 40 位完整 SHA，或不可移动的 `vX.Y.Z`。禁止 `v1` 这类别的浮动标签，也禁止分支名。`latest` 只接受这一个小写名字。SHA 接受大小写十六进制，`v` 只小写。检查在 [`scripts/check-pinned-ref.sh`](scripts/check-pinned-ref.sh)。
 
-发布时在目标提交上打 `vX.Y.Z`。这个标签打出之后不要移动。调用方要拿后续修复，就改自己的 ref。
+每次合并到 main 之后先打新的 `vX.Y.Z`。这个标签创建后不能改、不能删。再把 `latest` 移到同一个提交。调用方跟着 `latest` 前进；要钉死某一次发布就改用那个 `vX.Y.Z` 或提交 SHA。
+
+规则集变更先保持仓库里的期望 JSON 为 `disabled`。导入或更新线上规则后，先按 `disabled` 读回比对，再把线上改成 `active` 并再比对一次。不要把 `active` 写回仓库。
 
 | 引用 | 结果 |
 | --- | --- |
+| `@latest` | 指向当前发布。每次发版后移到新的 `vX.Y.Z`。 |
 | `@<40 位 SHA>` | 固定在那一次提交。 |
-| `@vX.Y.Z` | 固定在这个三位版本标签上。标签不要移动。 |
-| `@v1`、分支名 | 禁止。 |
+| `@vX.Y.Z` | 固定在这个三位版本标签上。标签不要移动，也不要删除。 |
+| `@v1`、`@Latest`、分支名 | 禁止。 |
 
 本仓库的 action 都钉完整提交 SHA，注释里写发行标签。`dtolnay/rust-toolchain` 的 `v1` 会移动，所以钉 2026-11-15 的 `df2a88e9fe4098bad09cb42c3dec7187f15861fc`。`Swatinem/rust-cache` 钉 `d1527c8f67ef9af357290475d4af4b0fab8f12e0`（v2.9.3），并且只在 `refs/heads/main` 上 `save-if`。cargo 子命令用 `taiki-e/install-action` v2.90.8（`fe3acb53a98b62c772db35de75ce0e4595e7ca8c`），写上工具版本。清单里有的工具设 `fallback: none`。cargo-fuzz 不在这份清单里，用同一 action 的 `cargo-binstall` 回退安装预编译的 `cargo-fuzz@0.13.2`，不再 `cargo install` 从源码编译。
 
@@ -91,11 +94,11 @@ jobs:
 
 `build.rs` 跟着触发它的那次编译使用同一组 flag。普通 crate 会先做非测试编译，因此构建脚本走严格那一组。
 
-`lint / comments` 跑 [`scripts/check-comments.py`](scripts/check-comments.py)，扫调用方仓库全部 `*.rs`，跳过 `target/`、`vendor/` 和 `.burncloud-ci/`。只允许这四类：
+`lint / comments` 跑 [`scripts/check-comments.py`](scripts/check-comments.py)，扫调用方仓库全部 `*.rs`。`target/`、`vendor/`、`.burncloud-ci/`、`mutants.out` 只在仓库根跳过，嵌套的同名目录仍会扫描。只允许这四类：
 
 - 文件最前面的许可证行：`// SPDX-License-Identifier: ...` 和 `// Copyright ...`。
-- 紧挨一个带 `pub` 关键字的项的 `///`。中间只能是属性或其他 `///`，不能空一行。没有 `pub` 的枚举变体不能写 `///`。
-- 文件或 `mod` 正文开头、任何条目前的 `//!`。`#![...]` 可以写在这些 `//!` 前面。
+- 紧挨真正公开 API 的 `///`，以及等价的 `#[doc = "..."]` 和 `#[cfg_attr(..., doc = "...")]`。中间只能是属性或其他文档，不能空一行。`pub(crate)`、`pub(super)`、`pub(in ...)` 不算公开 API。私有 `mod` 里的 `pub` 项也不算。没有 `pub` 的枚举变体不能写文档。
+- 文件或 `mod` 正文开头、任何条目前的 `//!`，以及等价的 `#![doc = "..."]`。`#![...]` 可以写在这些文档前面。
 - 外部约束。注释文本固定为 `// EXTERNAL: https://...`，可以单独成行，也可以写在代码行末尾。`https://` 后面不能有空格。
 
 其余 `//` 和 `/* */`（包括 `/** */`）都报 `文件:行号`。字符串、原始字符串、字节串、c 字符串和字符字面量里的 `//` 会跳过。
@@ -150,7 +153,7 @@ jobs:
 
 默认路径只写在 [`scripts/check-protected-paths.sh`](scripts/check-protected-paths.sh)。required workflow 不会传入 `protected-paths`，输入为空时脚本使用这份默认列表。非空输入会整份替换默认列表，不是追加。当前默认值包括 `.github/`、`.cargo/`、`vendor/`、`contracts/`、`supply-chain/`、clippy/rustfmt/deny 配置、`rust-toolchain`、`rust-toolchain.toml`、`unsafe-crates.txt`、删除仓库根 `Cargo.toml`，以及用 TOML 解析器比较的 `lints`、`workspace.lints`、`patch`、`replace`。`build.rs` 不在默认列表里；要保护它就传一整份新的路径列表。
 
-豁免只在 `github.repository` 和 `job.workflow_repository` 都是 `burncloud/ci` 时生效。把工作流复制到别的仓库再用相对路径引用，不会再被当成源仓库。fork 上的 `github.repository` 仍是 base 仓库；如果 workflow 也来自 `burncloud/ci`，这次豁免仍会生效。跨仓库的真实行为在打 `vX.Y.Z` 之前还要用一个外部 crate 仓库核对。调用方到时候也只能引用这个标签或 40 位 SHA。
+豁免只在 `github.repository` 和 `job.workflow_repository` 都是 `burncloud/ci` 时生效。把工作流复制到别的仓库再用相对路径引用，不会再被当成源仓库。fork 上的 `github.repository` 仍是 base 仓库；如果 workflow 也来自 `burncloud/ci`，这次豁免仍会生效。跨仓库的真实行为还要用一个外部 crate 仓库核对。调用方用 `@latest`；要钉死就用 `vX.Y.Z` 或 40 位 SHA。
 
 `merge_group` 用事件里的 `base_sha` 和 `head_sha` 比较。新分支 push 的 `before` 如果是全 0，改为和默认分支比较。
 
@@ -177,9 +180,9 @@ bash scripts/scan-capabilities.sh tests/fixture
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py
-bash scripts/check-pinned-ref.sh v1.0.0
+bash scripts/check-pinned-ref.sh latest
 ```
 
 ## 下一步
 
-`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用 40 位 SHA 或 `vX.Y.Z`。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。清单仓库保持公开，按 [docs/org-ruleset.md](docs/org-ruleset.md) 配单仓库规则集和 CODEOWNERS。`uses` 调用的检查名已经在 template 上看到，是 `rust / lint / fmt` 这种三段式。组织级 required workflow 仍是升级到 Team 之后的选项，注入后的检查名还没核对。
+`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用 `@latest`。要钉死某一次发布就改用 `vX.Y.Z` 或 40 位 SHA。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。清单仓库保持公开，按 [docs/org-ruleset.md](docs/org-ruleset.md) 配单仓库规则集和 CODEOWNERS。`uses` 调用的检查名已经在 template 上看到，是 `rust / lint / fmt` 这种三段式。组织级 required workflow 仍是升级到 Team 之后的选项，注入后的检查名还没核对。
