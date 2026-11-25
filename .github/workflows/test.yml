@@ -485,11 +485,13 @@ jobs:
             exit 1
           fi
           # cargo-fuzz 0.13.2 的 build 子命令没有 --locked。先用 metadata 卡住锁文件。
+          # 发布的 Linux 二进制是 musl，默认 target 会跟着变成 musl，libFuzzer 在那里编不过。
+          host=x86_64-unknown-linux-gnu
           cargo +nightly-2026-11-20 metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml >/dev/null
-          cargo +nightly-2026-11-20 fuzz build
+          cargo +nightly-2026-11-20 fuzz build --target "$host"
           while IFS= read -r target; do
             echo "cargo-fuzz: 运行 ${target}，最长 15 秒。"
-            cargo +nightly-2026-11-20 fuzz run "$target" -- -max_total_time=15
+            cargo +nightly-2026-11-20 fuzz run "$target" --target "$host" -- -max_total_time=15
           done < "${RUNNER_TEMP}/fuzz-targets"
 
   mutants:
