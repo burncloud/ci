@@ -1,6 +1,6 @@
 # burncloud/ci
 
-BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。现在走 GitHub 免费套餐：清单仓库保持公开，用 `uses` 钉完整 SHA 或不可变 tag，再配单仓库规则集和 CODEOWNERS。组织级 required workflow 需要 Team，写在 [docs/org-ruleset.md](docs/org-ruleset.md)，升级之后再用。调用方仓库里的 YAML 挡不住改检查：PR 可以改 `protected-paths`、换掉 `uses`，或写同名空 job。改工作流靠 CODEOWNERS 审批。
+BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。现在走 GitHub 免费套餐：清单仓库保持公开，用 `uses` 钉 40 位完整 SHA 或 `vX.Y.Z` 标签，再配单仓库规则集和 CODEOWNERS。禁止 `v1` 这类浮动标签，也禁止分支名。组织级 required workflow 需要 Team，写在 [docs/org-ruleset.md](docs/org-ruleset.md)，升级之后再用。调用方仓库里的 YAML 挡不住改检查：PR 可以改 `protected-paths`、换掉 `uses`，或写同名空 job。改工作流靠 CODEOWNERS 审批。
 
 调用方放这一份。工作流不要命名为 `Rust`，否则并发组会撞名。模板用 `name: CI`：
 
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   rust:
-    uses: burncloud/ci/.github/workflows/rust.yml@<不可变 tag 或 SHA>
+    uses: burncloud/ci/.github/workflows/rust.yml@<40 位 SHA 或 vX.Y.Z>
     with:
       run-proptest: false
       run-fuzz: false
@@ -27,12 +27,17 @@ jobs:
 
 升级到 Team 并启用组织级 required workflow 之后，再删掉这份 `uses` job，否则会和注入的 `rust.yml` 各跑一遍。免费套餐下留着这个 job，它就是清单仓库的 CI。
 
+仓库设置里两处要改：
+
+- Actions → General → Fork pull request workflows：选 Require approval for all outside collaborators。外部贡献者的 PR 在批准之前不跑 Actions。
+- Actions → General → Workflow permissions：关闭 Allow GitHub Actions to create and approve pull requests。
+
 插件仓库要额外检查 wasm 目标时再传 `targets`。这一项不放进上面的通用模板。只检查库和二进制，不编译测试：
 
 ```yaml
 jobs:
   rust:
-    uses: burncloud/ci/.github/workflows/rust.yml@<不可变 tag 或 SHA>
+    uses: burncloud/ci/.github/workflows/rust.yml@<40 位 SHA 或 vX.Y.Z>
     with:
       targets: wasm32-wasip2
 ```
@@ -43,12 +48,15 @@ jobs:
 
 ## 版本怎么固定
 
-发布时在目标提交上打不可变的 `vX.Y.Z`。已经发出的补丁 tag 不要移动。`v1` 可以指到当前主版本，方便人读，但 required workflow 不要钉 `v1`，要钉 `vX.Y.Z` 或 40 位 SHA。
+调用方 `uses` 只允许两种 ref：40 位完整 SHA，或 `vX.Y.Z`。禁止 `v1` 这类浮动标签，也禁止分支名。
 
-| 引用 | 行为 |
+发布时在目标提交上打 `vX.Y.Z`。这个标签打出之后不要移动。调用方要拿后续修复，就改自己的 ref。
+
+| 引用 | 结果 |
 | --- | --- |
-| `@v1` | 维护者移动标签后，下一次运行就带上这一主版本里的修复。标签会变。 |
-| `@vX.Y.Z` 或 `@<SHA>` | 不会跟着变。修复要调用方或规则集自己改 ref。 |
+| `@<40 位 SHA>` | 固定在那一次提交。 |
+| `@vX.Y.Z` | 固定在这个三位版本标签上。标签不要移动。 |
+| `@v1`、分支名 | 禁止。 |
 
 本仓库的 action 都钉完整提交 SHA，注释里写发行标签。`dtolnay/rust-toolchain` 的 `v1` 会移动，所以钉 2026-11-15 的 `df2a88e9fe4098bad09cb42c3dec7187f15861fc`。`Swatinem/rust-cache` 钉 `d1527c8f67ef9af357290475d4af4b0fab8f12e0`（v2.9.3），并且只在 `refs/heads/main` 上 `save-if`。cargo 子命令用 `taiki-e/install-action` v2.90.8（`fe3acb53a98b62c772db35de75ce0e4595e7ca8c`），写上工具版本。清单里有的工具设 `fallback: none`。cargo-fuzz 不在这份清单里，用同一 action 的 `cargo-binstall` 回退安装预编译的 `cargo-fuzz@0.13.2`，不再 `cargo install` 从源码编译。
 
@@ -120,7 +128,7 @@ jobs:
 
 默认路径只写在 [`scripts/check-protected-paths.sh`](scripts/check-protected-paths.sh)。required workflow 不会传入 `protected-paths`，输入为空时脚本使用这份默认列表。非空输入会整份替换默认列表，不是追加。当前默认值包括 `.github/`、`.cargo/`、`vendor/`、`contracts/`、`supply-chain/`、clippy/rustfmt/deny 配置、`rust-toolchain`、`rust-toolchain.toml`、`unsafe-crates.txt`、删除仓库根 `Cargo.toml`，以及用 TOML 解析器比较的 `lints`、`workspace.lints`、`patch`、`replace`。`build.rs` 不在默认列表里；要保护它就传一整份新的路径列表。
 
-豁免只在 `github.repository` 和 `job.workflow_repository` 都是 `burncloud/ci` 时生效。把工作流复制到别的仓库再用相对路径引用，不会再被当成源仓库。fork 上的 `github.repository` 仍是 base 仓库；如果 workflow 也来自 `burncloud/ci`，这次豁免仍会生效。跨仓库的真实行为在打不可变 tag 之前还要用一个外部 crate 仓库核对。
+豁免只在 `github.repository` 和 `job.workflow_repository` 都是 `burncloud/ci` 时生效。把工作流复制到别的仓库再用相对路径引用，不会再被当成源仓库。fork 上的 `github.repository` 仍是 base 仓库；如果 workflow 也来自 `burncloud/ci`，这次豁免仍会生效。跨仓库的真实行为在打 `vX.Y.Z` 之前还要用一个外部 crate 仓库核对。调用方到时候也只能引用这个标签或 40 位 SHA。
 
 `merge_group` 用事件里的 `base_sha` 和 `head_sha` 比较。新分支 push 的 `before` 如果是全 0，改为和默认分支比较。
 
@@ -145,8 +153,9 @@ bash scripts/run-cargo-vet.sh tests/fixture
 bash scripts/scan-capabilities.sh tests/fixture
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
+python3 scripts/check-rulesets.py
 ```
 
 ## 下一步
 
-`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用不可变 ref。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。清单仓库保持公开，按 [docs/org-ruleset.md](docs/org-ruleset.md) 配单仓库规则集和 CODEOWNERS。`uses` 调用的检查名已经在 template 上看到，是 `rust / lint / fmt` 这种三段式。组织级 required workflow 仍是升级到 Team 之后的选项，注入后的检查名还没核对。
+`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用 40 位 SHA 或 `vX.Y.Z`。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。清单仓库保持公开，按 [docs/org-ruleset.md](docs/org-ruleset.md) 配单仓库规则集和 CODEOWNERS。`uses` 调用的检查名已经在 template 上看到，是 `rust / lint / fmt` 这种三段式。组织级 required workflow 仍是升级到 Team 之后的选项，注入后的检查名还没核对。

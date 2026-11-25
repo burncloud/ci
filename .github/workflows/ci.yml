@@ -53,6 +53,9 @@ jobs:
       - name: actionlint
         run: actionlint -shellcheck "$(command -v shellcheck)"
 
+      - name: Check ruleset JSON
+        run: python3 scripts/check-rulesets.py
+
       - name: Check scripts
         run: |
           set -euo pipefail
