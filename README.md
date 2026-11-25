@@ -99,7 +99,7 @@ Cursor GitHub App（app id `1210556`，slug `cursor`，来自 `GET /apps/cursor`
 `lint / comments` 跑 [`scripts/check-comments.py`](scripts/check-comments.py)，扫调用方仓库全部 `*.rs`。`target/`、`vendor/`、`.burncloud-ci/`、`mutants.out` 只在仓库根跳过，嵌套的同名目录仍会扫描。只允许这四类：
 
 - 文件最前面的许可证行：`// SPDX-License-Identifier: ...` 和 `// Copyright ...`。
-- 紧挨真正公开 API 的 `///`，以及等价的 `#[doc = "..."]` 和 `#[cfg_attr(..., doc = "...")]`。中间只能是属性或其他文档，不能空一行。`pub(crate)`、`pub(super)`、`pub(in ...)` 不算公开 API。私有 `mod` 里的 `pub` 项也不算。没有 `pub` 的枚举变体不能写文档。
+- 紧挨真正公开 API 的 `///`，以及等价的 `#[doc = "..."]` 和 `#[cfg_attr(..., doc = "...")]`。中间只能是属性或其他文档，不能空一行。`pub(crate)`、`pub(super)`、`pub(in ...)` 不算公开 API。私有 `mod` 里的 `pub` 项也不算。没有 `pub` 的枚举变体不能写文档。`pub trait` 的直接成员 `fn`、`type`、`const`（`fn` 前面可以有 `unsafe` 和 `async`）按语法不能写 `pub`（rustc E0449），这些成员允许紧挨的文档。私有 trait、`pub(crate)` trait、impl 块里的方法，以及函数体里的文档，仍然拒绝。
 - 文件或 `mod` 正文开头、任何条目前的 `//!`，以及等价的 `#![doc = "..."]`。`#![...]` 可以写在这些文档前面。
 - 外部约束。注释文本固定为 `// EXTERNAL: https://...`，可以单独成行，也可以写在代码行末尾。`https://` 后面不能有空格。
 

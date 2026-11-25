@@ -269,7 +269,9 @@ class FileChecker:
         self.rel = rel
         self.tokens = tokens
         self.errors = []
-        self.frames = [{"kind": "file", "preamble": True, "exportable": True}]
+        self.frames = [
+            {"kind": "file", "preamble": True, "exportable": True, "pub_trait": False}
+        ]
 
     def error(self, line, message):
         self.errors.append((self.rel, line, message))
@@ -391,16 +393,40 @@ class FileChecker:
         _index, _end_line, is_doc = self.consume_attr(index, False)
         return is_doc
 
+    def is_trait_member(self, index):
+        token = self.tokens[index]
+        if token.kind != "ident":
+            return False
+        if token.text in {"fn", "type", "const"}:
+            return True
+        if token.text not in {"unsafe", "async"}:
+            return False
+        nxt = self.next_solid(index)
+        if nxt >= len(self.tokens) or self.tokens[nxt].kind != "ident":
+            return False
+        if self.tokens[nxt].text == "fn":
+            return True
+        if self.tokens[nxt].text not in {"unsafe", "async"}:
+            return False
+        third = self.next_solid(nxt)
+        return (
+            third < len(self.tokens)
+            and self.tokens[third].kind == "ident"
+            and self.tokens[third].text == "fn"
+        )
+
     def docs_are_public(self, index, prev_end):
         if index >= len(self.tokens):
             return False
         token = self.tokens[index]
-        if token.kind != "ident" or token.text != "pub" or token.start > prev_end + 1:
+        if token.start > prev_end + 1:
             return False
         if not self.frames[-1]["exportable"]:
             return False
-        nxt = self.next_solid(index)
-        return nxt >= len(self.tokens) or self.tokens[nxt].text != "("
+        if token.kind == "ident" and token.text == "pub":
+            nxt = self.next_solid(index)
+            return nxt >= len(self.tokens) or self.tokens[nxt].text != "("
+        return self.frames[-1]["pub_trait"] and self.is_trait_member(index)
 
     def take_docs(self, index):
         pieces = []
@@ -469,6 +495,7 @@ class FileChecker:
                 keyword = self.item_keyword(index)
                 kind = "block"
                 exportable = frame["exportable"]
+                pub_trait = False
                 if keyword >= 0:
                     word = self.tokens[keyword].text
                     if word == "mod":
@@ -476,7 +503,15 @@ class FileChecker:
                         exportable = frame["exportable"] and self.bare_pub_item(keyword)
                     elif word in {"struct", "enum", "union", "trait"}:
                         exportable = frame["exportable"] and self.bare_pub_item(keyword)
-                self.frames.append({"kind": kind, "preamble": kind == "mod", "exportable": exportable})
+                        pub_trait = word == "trait" and exportable
+                self.frames.append(
+                    {
+                        "kind": kind,
+                        "preamble": kind == "mod",
+                        "exportable": exportable,
+                        "pub_trait": pub_trait,
+                    }
+                )
                 index += 1
                 continue
             if token.text == "}":

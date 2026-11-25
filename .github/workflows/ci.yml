@@ -315,6 +315,67 @@ jobs:
                   "ok"
               }
           }
+
+          pub trait Pricing {
+              /// Prices one usage value.
+              ///
+              /// # Errors
+              ///
+              /// Returns the implementor error when usage is rejected.
+              /// The method is public and cannot carry a visibility keyword.
+              fn price(&self) -> Result<(), ()>;
+
+              /// Usage value.
+              type Usage;
+
+              /// Scale.
+              const SCALE: i32;
+
+              /// Documented.
+              #[must_use]
+              fn marked(&self) -> i32;
+
+              /// Fallible default.
+              fn fallback(&self) -> Result<(), ()> {
+                  // EXTERNAL: https://doc.rust-lang.org/std/result/
+                  Ok(())
+              }
+
+              #[doc = "Associated error."]
+              type Error;
+
+              #[cfg_attr(unix, doc = "Unix note.")]
+              fn unix_price(&self);
+
+              /// Unsafe method.
+              unsafe fn raw(&self);
+
+              /// Async method.
+              async fn later(&self);
+
+              /// Both qualifiers.
+              async unsafe fn both(&self);
+
+              /// Const method.
+              const fn fixed(&self) -> i32;
+          }
+
+          pub mod exported {
+              pub trait Visible {
+                  /// Nested public trait method.
+                  fn ping(&self);
+              }
+          }
+
+          pub unsafe trait Hazard {
+              /// Unsafe trait method.
+              unsafe fn poke(&self);
+          }
+
+          pub trait Child: Pricing {
+              /// Child method.
+              fn child(&self);
+          }
           EOF
           python3 "$root/scripts/check-comments.py" "$pass_comments"
           python3 "$root/scripts/check-comments.py" "$root"
@@ -357,6 +418,16 @@ jobs:
           fail_comments pub-in 'lib.rs:1:' $'/// hidden\npub(in crate::hidden) fn f() -> i32 { 1 }\n'
           fail_comments private-mod 'lib.rs:2:' $'mod hidden {\n    /// secret\n    pub fn f() -> i32 { 1 }\n}\n'
           fail_comments doc-attr-private-mod 'lib.rs:2:' $'mod hidden {\n    #[doc = "secret"]\n    pub fn f() -> i32 { 1 }\n}\n'
+          fail_comments private-trait 'lib.rs:2:' $'trait Foo {\n    /// hidden\n    fn f(&self);\n}\n'
+          fail_comments unsafe-private-trait 'lib.rs:2:' $'unsafe trait Foo {\n    /// hidden\n    fn f(&self);\n}\n'
+          fail_comments pub-crate-trait 'lib.rs:2:' $'pub(crate) trait Foo {\n    /// hidden\n    fn f(&self);\n}\n'
+          fail_comments pub-crate-unsafe-trait 'lib.rs:2:' $'pub(crate) unsafe trait Foo {\n    /// hidden\n    fn f(&self);\n}\n'
+          fail_comments impl-method 'lib.rs:2:' $'impl Foo {\n    /// hidden\n    fn f(&self) {}\n}\n'
+          fail_comments trait-impl-method 'lib.rs:2:' $'impl Foo for Bar {\n    /// hidden\n    fn f(&self) {}\n}\n'
+          fail_comments trait-fn-body 'lib.rs:3:' $'pub trait Foo {\n    fn f(&self) {\n        /// hidden\n        fn g() {}\n    }\n}\n'
+          fail_comments private-mod-trait 'lib.rs:3:' $'mod hidden {\n    pub trait Foo {\n        /// secret\n        fn f(&self);\n    }\n}\n'
+          fail_comments trait-blank 'lib.rs:2:' $'pub trait Foo {\n    /// hidden\n\n    fn f(&self);\n}\n'
+          fail_comments trait-struct 'lib.rs:2:' $'pub trait Foo {\n    /// hidden\n    struct Bar;\n}\n'
 
           string_dir=$(mktemp -d)
           printf '%s\n' $'pub fn f() -> i32 {\n    let _ = "http://example.com";\n    // real\n    1\n}\n' > "$string_dir/lib.rs"
