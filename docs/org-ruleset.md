@@ -52,7 +52,7 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 `.github/CODEOWNERS` 把全部路径交给 `@rustburn` 和 `@ivories`。`rustburn` 负责写代码，是 owner，紧急时走仓库管理员的 `pull_request` bypass。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。两人在 GitHub 上都要有写权限。`gh api repos/burncloud/ci/codeowners/errors` 返回的 `errors` 为空才算配好。
 
-必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
+必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。新增的注释检查同样按这个形状列入：`lint / comments`、`rust / lint / comments`、`caller / lint / comments`。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
 
 标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此拆成两份：
 
@@ -125,11 +125,12 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 这条规则直接运行本仓库的 `rust.yml`，不会传入 inputs。`working-directory`、开关和 semver 基线在表达式里用 `||` 落到空值或 `auto`；受保护路径输入为空时，脚本使用自己的默认列表。调用方因此改不了这套默认行为。不要再同时让每个 crate 仓库用 `uses` 跑一遍，否则 CI 会跑两遍。规则集启用 required workflow 之后，`burncloud/template` 里的 `uses` job 要删掉。调用方文件可以留着给人读，但安全边界是这条规则。
 
-`burncloud/template` 的 PR #1 用 job id `rust` 调用了 `rust.yml`（https://github.com/burncloud/template/actions/runs/45630856560）。检查名是带 `rust / ` 前缀的三段式，另有 `rust / resolve`：
+`burncloud/template` 的 PR #1 用 job id `rust` 调用了 `rust.yml`（https://github.com/burncloud/template/actions/runs/45630856560）。检查名是带 `rust / ` 前缀的三段式，另有 `rust / resolve`。下面除 `rust / lint / comments` 外都是那次运行看到的名字；`comments` 是新增 job，沿用同一前缀：
 
 - `rust / resolve`
 - `rust / lint / fmt`
 - `rust / lint / clippy`
+- `rust / lint / comments`
 - `rust / lint / unsafe`
 - `rust / test / cargo-test`
 - `rust / test / doc-test`

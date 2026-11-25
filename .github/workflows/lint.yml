@@ -93,8 +93,28 @@ jobs:
           workspaces: ${{ inputs.working-directory }}
 
       - name: cargo clippy
-        working-directory: ${{ inputs.working-directory }}
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -D clippy::allow_attributes_without_reason
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/run-clippy.sh "$WORKING_DIRECTORY"
+
+  comments:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Check comments
+        run: python3 .burncloud-ci/scripts/check-comments.py .
 
   unsafe:
     runs-on: ubuntu-24.04
