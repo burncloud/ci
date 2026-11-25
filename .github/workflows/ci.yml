@@ -212,6 +212,31 @@ jobs:
             exit 1
           fi
 
+          accept_ref() {
+            local ref=$1
+            if ! bash scripts/check-pinned-ref.sh "$ref"; then
+              echo "固定版本应当接受 ${ref}" >&2
+              exit 1
+            fi
+          }
+          reject_ref() {
+            local ref=$1
+            if bash scripts/check-pinned-ref.sh "$ref"; then
+              echo "固定版本应当拒绝 ${ref}" >&2
+              exit 1
+            fi
+          }
+          accept_ref 0123456789abcdef0123456789abcdef01234567
+          accept_ref 0123456789ABCDEF0123456789ABCDEF01234567
+          accept_ref 0123456789AbCdEf0123456789aBcDeF01234567
+          accept_ref v1.0.0
+          reject_ref v1
+          reject_ref v1.0
+          reject_ref main
+          reject_ref 0123456789abcdef0123456789abcdef0123456
+          reject_ref 0123456789abcdef0123456789abcdef012345678
+          reject_ref 0123456789abcdef0123456789abcdef0123456g
+
   # 两次调用的 github.workflow 都是本工作流的名字 CI。
   # key 必须不同，组名才分别是 rust-CI-<PR>-self-test 和 rust-CI-<PR>-caller-with，
   # 否则后一次会取消整次运行。

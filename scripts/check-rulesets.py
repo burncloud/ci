@@ -133,8 +133,48 @@ def self_test_codeowners():
         fail("CODEOWNERS 自测：缺少 ivories 不应当通过")
 
 
+def organization_admin_actor_ids_ok(data):
+    for actor in data.get("bypass_actors") or []:
+        if actor.get("actor_type") != "OrganizationAdmin":
+            continue
+        if "actor_id" not in actor or actor["actor_id"] is not None:
+            return False
+    return True
+
+
+def check_organization_admin(data, name):
+    if not organization_admin_actor_ids_ok(data):
+        fail(f"{name}: OrganizationAdmin 的 actor_id 必须是 null")
+
+
+def self_test_organization_admin():
+    null_id = {
+        "bypass_actors": [
+            {
+                "actor_id": None,
+                "actor_type": "OrganizationAdmin",
+                "bypass_mode": "pull_request",
+            }
+        ]
+    }
+    numeric_id = {
+        "bypass_actors": [
+            {
+                "actor_id": 1,
+                "actor_type": "OrganizationAdmin",
+                "bypass_mode": "pull_request",
+            }
+        ]
+    }
+    if not organization_admin_actor_ids_ok(null_id):
+        fail("OrganizationAdmin 自测：actor_id 为 null 应当通过")
+    if organization_admin_actor_ids_ok(numeric_id):
+        fail("OrganizationAdmin 自测：actor_id 为数字不应当通过")
+
+
 def main():
     self_test_codeowners()
+    self_test_organization_admin()
     check_codeowners()
     check_branch(load("crate-main.json"), CRATE_CONTEXTS)
     check_branch(load("ci-main.json"), CI_CONTEXTS)
@@ -168,6 +208,7 @@ def main():
         data = json.loads(path.read_text())
         if data.get("enforcement") == "evaluate":
             fail(f"{path.name}: 不要写 evaluate")
+        check_organization_admin(data, path.name)
     print("rulesets: ok")
 
 
