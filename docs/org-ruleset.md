@@ -56,7 +56,7 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此拆成两份：
 
-- [docs/rulesets/ci-tags.json](rulesets/ci-tags.json) 匹配 `refs/tags/v*`，规则是 `update`（`update_allows_fetch_and_merge` 为 false，这是 API 的必填参数）、`deletion`、`non_fast_forward`。`bypass_actors` 为空，仓库管理员也不能移动或删除这些标签。移动标签是 ref 的 `update`，`non_fast_forward` 再挡住非快进更新。
+- [docs/rulesets/ci-tags.json](rulesets/ci-tags.json) 匹配 `refs/tags/v*`，规则是 `update`、`deletion`、`non_fast_forward`。`update` 不带 `parameters`：`update_allows_fetch_and_merge` 只对分支有意义，默认就是 false，服务端创建 tag 规则集时会丢掉这个字段，读回是 `{"type":"update"}`。语义不变。`bypass_actors` 为空，仓库管理员也不能移动或删除这些标签。移动标签是 ref 的 `update`，`non_fast_forward` 再挡住非快进更新。
 - [docs/rulesets/ci-tags-create.json](rulesets/ci-tags-create.json) 只有 `creation`。bypass 是同一个仓库管理员角色，`bypass_mode` 为 `always`。creation 的含义是：只有能 bypass 的人可以创建匹配的 tag。
 
 三份的 `enforcement` 都是 `disabled`。在 `burncloud/ci` 的检出里执行。读回用 `scripts/check-ruleset-readback.sh`：没有 `pull_request` 或 `required_status_checks` 的标签规则集也按同一套规则比较。

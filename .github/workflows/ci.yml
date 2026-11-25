@@ -79,6 +79,7 @@ jobs:
             expect_exit 1 "$name" bash "$script" "$submitted" "tests/ruleset-readback/crate-main/${name}.json"
           done
           expect_exit 0 ci-tags-ok bash "$script" docs/rulesets/ci-tags.json tests/ruleset-readback/ci-tags/ok.json
+          expect_exit 0 ci-tags-server-readback bash "$script" docs/rulesets/ci-tags.json tests/ruleset-readback/ci-tags/server-readback.json
           expect_exit 1 ci-tags-extra-bypass bash "$script" docs/rulesets/ci-tags.json tests/ruleset-readback/ci-tags/extra-bypass.json
 
       - name: Check scripts
