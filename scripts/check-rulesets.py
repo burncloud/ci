@@ -95,20 +95,46 @@ def check_branch(data, contexts):
         fail(f"{data['name']}: 不要把会跳过的 resolve 放进必需检查")
 
 
+EXPECTED_STAR_OWNERS = {"@rustburn", "@ivories"}
+
+
+def star_owners(text):
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if parts[0] == "*":
+            return set(parts[1:])
+    return None
+
+
 def check_codeowners():
     path = ROOT / ".github" / "CODEOWNERS"
     if not path.is_file():
         fail("缺少 .github/CODEOWNERS")
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.split()[0] == "*":
-            return
-    fail(".github/CODEOWNERS 必须有覆盖 * 的规则")
+    owners = star_owners(path.read_text())
+    if owners is None:
+        fail(".github/CODEOWNERS 必须有覆盖 * 的规则")
+    if owners != EXPECTED_STAR_OWNERS:
+        fail(".github/CODEOWNERS 的 * 规则必须是 @rustburn 和 @ivories")
+
+
+def self_test_codeowners():
+    if star_owners("* @rustburn @ivories\n") != EXPECTED_STAR_OWNERS:
+        fail("CODEOWNERS 自测：真实账号应当通过")
+    if star_owners("* @ivories @rustburn\n") != EXPECTED_STAR_OWNERS:
+        fail("CODEOWNERS 自测：账号顺序不影响结果")
+    placeholder = "@" + "REPLACE" + "-WITH-" + "OWNER"
+    other = "@" + "REPLACE" + "-WITH-" + "REVIEWER"
+    if star_owners(f"# 注释\n* {placeholder} {other}\n") == EXPECTED_STAR_OWNERS:
+        fail("CODEOWNERS 自测：占位账号不应当通过")
+    if star_owners("* @rustburn\n") == EXPECTED_STAR_OWNERS:
+        fail("CODEOWNERS 自测：缺少 ivories 不应当通过")
 
 
 def main():
+    self_test_codeowners()
     check_codeowners()
     check_branch(load("crate-main.json"), CRATE_CONTEXTS)
     check_branch(load("ci-main.json"), CI_CONTEXTS)

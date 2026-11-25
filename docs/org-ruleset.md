@@ -14,12 +14,13 @@
 
 调用方工作流用 `uses: burncloud/ci/.github/workflows/rust.yml@<40 位 SHA 或 vX.Y.Z>`。工作流不要命名为 `Rust`。
 
-PR 作者可以修改调用方的 `ci.yml`：换掉 `uses`、改 `protected-paths`，或写一个同名空 job。单仓库规则集挡不住这份 YAML。安全性靠 CODEOWNERS 审批兜底。`.github/workflows/` 和 `CODEOWNERS` 本身都要写进 CODEOWNERS，改工作流必须有 Code Owner 批准。审批人用哪个账号由仓库所有者决定，这里不指定。
+PR 作者可以修改调用方的 `ci.yml`：换掉 `uses`、改 `protected-paths`，或写一个同名空 job。单仓库规则集挡不住这份 YAML。安全性靠 CODEOWNERS 审批兜底。`.github/workflows/` 和 `CODEOWNERS` 本身都要写进 CODEOWNERS，改工作流必须有 Code Owner 批准。
+
+`rustburn` 负责写代码，是 owner。紧急时走仓库管理员的 `pull_request` bypass，不能直推。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。
 
 ```
-# 把 @OWNER 换成所有者指定的用户或团队
-/.github/workflows/** @OWNER
-/.github/CODEOWNERS @OWNER
+/.github/workflows/** @rustburn @ivories
+/.github/CODEOWNERS @rustburn @ivories
 ```
 
 `burncloud/template` 的 PR #1 用 job id `rust` 调用了 `rust.yml`（https://github.com/burncloud/template/actions/runs/45630856560）。实测检查名是带 `rust / ` 前缀的三段式。`rust / resolve` 在 `working-directory` 为默认 `.` 时会被跳过。跳过的 job 会以 Success 报告，把它设为必需检查没有意义，所以不放进规则集。
@@ -49,7 +50,7 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 本仓库的 main 用 [docs/rulesets/ci-main.json](rulesets/ci-main.json)。规则和 `crate-main` 相同：pull request、1 个批准、Code Owner、新提交使旧批准失效、last push approval、review 线程必须解决、禁止强推、禁止删除分支。bypass 同样是仓库管理员的 `pull_request` 模式，原因相同。`enforcement` 是 `disabled`。
 
-`.github/CODEOWNERS` 里的 `@REPLACE-WITH-OWNER` 和 `@REPLACE-WITH-REVIEWER` 是占位。GitHub 会静默跳过不存在的账号，所以 Code Owner 审批现在还不生效。换成有写权限的真实账号后，`gh api repos/burncloud/ci/codeowners/errors` 返回的 `errors` 为空才算配好。
+`.github/CODEOWNERS` 把全部路径交给 `@rustburn` 和 `@ivories`。`rustburn` 负责写代码，是 owner，紧急时走仓库管理员的 `pull_request` bypass。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。两人在 GitHub 上都要有写权限。`gh api repos/burncloud/ci/codeowners/errors` 返回的 `errors` 为空才算配好。
 
 必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
 
@@ -173,7 +174,7 @@ jobs:
 
 下面到文末仍是组织级规则集，升级到 Team 之前不导入。
 
-审批人用哪个账号由仓库所有者决定，这里不指定。如果 PR 作者本身是组织管理员（当前作者 `rustburn` 如果是），`bypass_actors` 里的组织管理员身份可以让他绕过审批。这是规则集 API 的行为，不是额外开的口子。组织级规则集也先以 `disabled` 建立，人工核对读回结果后再改为 `active`。
+`rustburn` 负责写代码，是 owner。紧急时他用仓库管理员或组织管理员的 `pull_request` bypass，不能直推。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。组织管理员 bypass 是规则集 API 的行为，不是额外开的口子。组织级规则集也先以 `disabled` 建立，人工核对读回结果后再改为 `active`。
 
 `bypass_actors` 保留全体组织管理员，`actor_type` 是 `OrganizationAdmin`，`actor_id` 用 `1`，`bypass_mode` 是 `pull_request`。导入前如果 API 拒绝这个 id，以组织设置页面导出的值为准。`require_last_push_approval` 先保持 false。
 

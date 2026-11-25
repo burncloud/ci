@@ -1,6 +1,6 @@
 # burncloud/ci
 
-BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。现在走 GitHub 免费套餐：清单仓库保持公开，用 `uses` 钉 40 位完整 SHA 或 `vX.Y.Z` 标签，再配单仓库规则集和 CODEOWNERS。禁止 `v1` 这类浮动标签，也禁止分支名。组织级 required workflow 需要 Team，写在 [docs/org-ruleset.md](docs/org-ruleset.md)，升级之后再用。调用方仓库里的 YAML 挡不住改检查：PR 可以改 `protected-paths`、换掉 `uses`，或写同名空 job。改工作流靠 CODEOWNERS 审批。
+BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。现在走 GitHub 免费套餐：清单仓库保持公开，用 `uses` 钉 40 位完整 SHA 或 `vX.Y.Z` 标签，再配单仓库规则集和 CODEOWNERS。禁止 `v1` 这类浮动标签，也禁止分支名。组织级 required workflow 需要 Team，写在 [docs/org-ruleset.md](docs/org-ruleset.md)，升级之后再用。调用方仓库里的 YAML 挡不住改检查：PR 可以改 `protected-paths`、换掉 `uses`，或写同名空 job。改工作流靠 CODEOWNERS 审批。`rustburn` 负责写代码，是 owner，紧急时走仓库管理员的 pull request bypass。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。
 
 调用方放这一份。工作流不要命名为 `Rust`，否则并发组会撞名。模板用 `name: CI`：
 

@@ -1,6 +1,6 @@
-# 这两个账号是占位，真实账号等用户给。
-# 占位账号会被 GitHub 静默跳过，Code Owner 审批现在还不生效。
-# 换成有写权限的真实账号后，执行：
+# rustburn 负责写代码，是 owner。紧急时走仓库管理员的 pull_request bypass，不能直推。
+# ivories（GitHub id 12606587）负责审批，是 Code Owner。
+# 两人在 GitHub 上都要有写权限。配好后执行：
 #   gh api repos/burncloud/ci/codeowners/errors
 # 返回的 errors 为空才算配好。
-* @REPLACE-WITH-OWNER @REPLACE-WITH-REVIEWER
+* @rustburn @ivories
