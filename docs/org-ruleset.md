@@ -34,12 +34,15 @@ PR 作者可以修改调用方的 `ci.yml`：换掉 `uses`、改 `protected-path
 
 job id 不是 `rust` 时，检查名的第一段会跟着变，规则集要改成实测名字。
 
-在清单仓库的检出里执行。`{owner}` 和 `{repo}` 换成该仓库。返回体里的 `id` 填进读回命令。核对 `enforcement`、`bypass_actors`、`rules` 和检查名之后，再把 enforcement 改成 active。仓库里的文件保持 `disabled`，不要把 `active` 提交进来。
+在 `burncloud/ci` 的检出里执行。`{owner}` 和 `{repo}` 换成清单仓库。建仓流程从同一个 CI_REF 下载 `scripts/check-ruleset-readback.sh` 再执行。读回先按文件里的 `disabled` 核对；改成 `active` 之后用 `EXPECTED_ENFORCEMENT=active` 再核对一次。仓库里的文件保持 `disabled`，不要把 `active` 提交进来。
 
 ```bash
-gh api -X POST repos/{owner}/{repo}/rulesets --input docs/rulesets/crate-main.json
-gh api repos/{owner}/{repo}/rulesets/{id}
-jq '.enforcement = "active"' docs/rulesets/crate-main.json | gh api -X PUT repos/{owner}/{repo}/rulesets/{id} --input -
+id=$(gh api -X POST repos/{owner}/{repo}/rulesets --input docs/rulesets/crate-main.json --jq .id)
+gh api "repos/{owner}/{repo}/rulesets/${id}" > /tmp/crate-main.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/crate-main.json /tmp/crate-main.readback.json
+jq '.enforcement = "active"' docs/rulesets/crate-main.json | gh api -X PUT "repos/{owner}/{repo}/rulesets/${id}" --input -
+gh api "repos/{owner}/{repo}/rulesets/${id}" > /tmp/crate-main.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/crate-main.json /tmp/crate-main.readback.json
 ```
 
 ## 免费套餐：burncloud/ci
@@ -55,17 +58,30 @@ jq '.enforcement = "active"' docs/rulesets/crate-main.json | gh api -X PUT repos
 - [docs/rulesets/ci-tags.json](rulesets/ci-tags.json) 匹配 `refs/tags/v*`，规则是 `update`（`update_allows_fetch_and_merge` 为 false，这是 API 的必填参数）、`deletion`、`non_fast_forward`。`bypass_actors` 为空，仓库管理员也不能移动或删除这些标签。移动标签是 ref 的 `update`，`non_fast_forward` 再挡住非快进更新。
 - [docs/rulesets/ci-tags-create.json](rulesets/ci-tags-create.json) 只有 `creation`。bypass 是同一个仓库管理员角色，`bypass_mode` 为 `always`。creation 的含义是：只有能 bypass 的人可以创建匹配的 tag。
 
-两份的 `enforcement` 都是 `disabled`。在 `burncloud/ci` 的检出里执行：
+三份的 `enforcement` 都是 `disabled`。在 `burncloud/ci` 的检出里执行。读回用 `scripts/check-ruleset-readback.sh`：没有 `pull_request` 或 `required_status_checks` 的标签规则集也按同一套规则比较。
 
 ```bash
-gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-main.json
-gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags.json
-gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags-create.json
-gh api repos/burncloud/ci/rulesets/{id}
-jq '.enforcement = "active"' docs/rulesets/ci-main.json | gh api -X PUT repos/burncloud/ci/rulesets/{id} --input -
+main_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-main.json --jq .id)
+tags_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags.json --jq .id)
+create_id=$(gh api -X POST repos/burncloud/ci/rulesets --input docs/rulesets/ci-tags-create.json --jq .id)
+gh api "repos/burncloud/ci/rulesets/${main_id}" > /tmp/ci-main.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/ci-main.json /tmp/ci-main.readback.json
+gh api "repos/burncloud/ci/rulesets/${tags_id}" > /tmp/ci-tags.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags.json /tmp/ci-tags.readback.json
+gh api "repos/burncloud/ci/rulesets/${create_id}" > /tmp/ci-tags-create.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-create.json /tmp/ci-tags-create.readback.json
+jq '.enforcement = "active"' docs/rulesets/ci-main.json | gh api -X PUT "repos/burncloud/ci/rulesets/${main_id}" --input -
+gh api "repos/burncloud/ci/rulesets/${main_id}" > /tmp/ci-main.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-main.json /tmp/ci-main.readback.json
+jq '.enforcement = "active"' docs/rulesets/ci-tags.json | gh api -X PUT "repos/burncloud/ci/rulesets/${tags_id}" --input -
+gh api "repos/burncloud/ci/rulesets/${tags_id}" > /tmp/ci-tags.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags.json /tmp/ci-tags.readback.json
+jq '.enforcement = "active"' docs/rulesets/ci-tags-create.json | gh api -X PUT "repos/burncloud/ci/rulesets/${create_id}" --input -
+gh api "repos/burncloud/ci/rulesets/${create_id}" > /tmp/ci-tags-create.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags-create.json /tmp/ci-tags-create.readback.json
 ```
 
-读回每一份，核对之后再把对应文件的 `enforcement` 改成 `active` 做 PUT。不要把改成 `active` 的 JSON 提交回仓库。
+不要把改成 `active` 的 JSON 提交回仓库。
 
 `ci-tags` 没有 bypass。规则集处于 `active` 时，谁都不能移动或删除 `v*` 标签。打错标签时，由组织 owner 临时关掉这份规则集，处理完立刻恢复。GitHub 会在组织审计日志里留下这次 ruleset 更新。已经被下游用来钉住的 `vX.Y.Z` 不要移动，应该发一个新的补丁版本。只有确认还没有人钉住这个标签时，才删除或在正确提交上重建。
 
@@ -74,6 +90,8 @@ jq '.enforcement = "active"' docs/rulesets/ci-main.json | gh api -X PUT repos/bu
 ```bash
 id=$(gh api repos/burncloud/ci/rulesets --jq '.[] | select(.name=="ci-tags") | .id')
 jq '.enforcement = "disabled"' docs/rulesets/ci-tags.json | gh api -X PUT "repos/burncloud/ci/rulesets/${id}" --input -
+gh api "repos/burncloud/ci/rulesets/${id}" > /tmp/ci-tags.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags.json /tmp/ci-tags.readback.json
 ```
 
 确认还没有下游钉住这个标签时，删掉它，或者删掉后在正确提交上重建。已经钉住的不要执行这两段，改发下一个补丁版本。
@@ -92,7 +110,8 @@ gh api -X POST repos/burncloud/ci/git/refs -f ref="refs/tags/vX.Y.Z" -f sha="<40
 ```bash
 id=$(gh api repos/burncloud/ci/rulesets --jq '.[] | select(.name=="ci-tags") | .id')
 jq '.enforcement = "active"' docs/rulesets/ci-tags.json | gh api -X PUT "repos/burncloud/ci/rulesets/${id}" --input -
-gh api "repos/burncloud/ci/rulesets/${id}" --jq '{id, name, enforcement, bypass_actors, rules}'
+gh api "repos/burncloud/ci/rulesets/${id}" > /tmp/ci-tags.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/ci-tags.json /tmp/ci-tags.readback.json
 ```
 
 ## 升级到 Team 之后：组织级 required workflow
@@ -182,10 +201,18 @@ jobs:
 `{id}` 用创建返回值。文件里的 `enforcement` 是 `disabled`。读回核对后再把 enforcement 改成 `active` 做 PUT，不要把 `active` 提交回仓库。
 
 ```bash
-gh api -X POST orgs/burncloud/rulesets --input docs/rulesets/burncloud-main.json
-gh api -X POST orgs/burncloud/rulesets --input docs/rulesets/burncloud-ci.json
-gh api orgs/burncloud/rulesets/{id}
-jq '.enforcement = "active"' docs/rulesets/burncloud-main.json | gh api -X PUT orgs/burncloud/rulesets/{id} --input -
+main_id=$(gh api -X POST orgs/burncloud/rulesets --input docs/rulesets/burncloud-main.json --jq .id)
+ci_id=$(gh api -X POST orgs/burncloud/rulesets --input docs/rulesets/burncloud-ci.json --jq .id)
+gh api "orgs/burncloud/rulesets/${main_id}" > /tmp/burncloud-main.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/burncloud-main.json /tmp/burncloud-main.readback.json
+gh api "orgs/burncloud/rulesets/${ci_id}" > /tmp/burncloud-ci.readback.json
+bash scripts/check-ruleset-readback.sh docs/rulesets/burncloud-ci.json /tmp/burncloud-ci.readback.json
+jq '.enforcement = "active"' docs/rulesets/burncloud-main.json | gh api -X PUT "orgs/burncloud/rulesets/${main_id}" --input -
+gh api "orgs/burncloud/rulesets/${main_id}" > /tmp/burncloud-main.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/burncloud-main.json /tmp/burncloud-main.readback.json
+jq '.enforcement = "active"' docs/rulesets/burncloud-ci.json | gh api -X PUT "orgs/burncloud/rulesets/${ci_id}" --input -
+gh api "orgs/burncloud/rulesets/${ci_id}" > /tmp/burncloud-ci.readback.json
+EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets/burncloud-ci.json /tmp/burncloud-ci.readback.json
 ```
 
 把 [docs/rulesets/burncloud-main.json](rulesets/burncloud-main.json) 里的 `refs/tags/v0.0.0` 换成真实的 `vX.Y.Z` 或 40 位 SHA 再导入。禁止 `v1` 和分支名。

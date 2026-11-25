@@ -56,6 +56,31 @@ jobs:
       - name: Check ruleset JSON
         run: python3 scripts/check-rulesets.py
 
+      - name: Check ruleset readback
+        run: |
+          set -euo pipefail
+          script=scripts/check-ruleset-readback.sh
+          expect_exit() {
+            local want=$1
+            local name=$2
+            shift 2
+            local status=0
+            "$@" >/tmp/ruleset-readback.out 2>/tmp/ruleset-readback.err || status=$?
+            if [[ "$status" -ne "$want" ]]; then
+              echo "FAIL ${name}: 预期 exit ${want}，实际 exit ${status}" >&2
+              cat /tmp/ruleset-readback.err >&2
+              exit 1
+            fi
+            echo "PASS ${name} exit ${status}"
+          }
+          submitted=docs/rulesets/crate-main.json
+          expect_exit 0 crate-ok bash "$script" "$submitted" tests/ruleset-readback/crate-main/ok.json
+          for name in extra-bypass bypass-mode-always exclude-default-branch include-changed check-name-longer missing-check extra-check integration-id-changed missing-deletion code-owner-false approval-count-zero enforcement-mismatch; do
+            expect_exit 1 "$name" bash "$script" "$submitted" "tests/ruleset-readback/crate-main/${name}.json"
+          done
+          expect_exit 0 ci-tags-ok bash "$script" docs/rulesets/ci-tags.json tests/ruleset-readback/ci-tags/ok.json
+          expect_exit 1 ci-tags-extra-bypass bash "$script" docs/rulesets/ci-tags.json tests/ruleset-readback/ci-tags/extra-bypass.json
+
       - name: Check scripts
         run: |
           set -euo pipefail

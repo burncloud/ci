@@ -1,0 +1,136 @@
+{
+  "name": "crate-main",
+  "target": "branch",
+  "enforcement": "disabled",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request",
+      "current_user_can_bypass": "never"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": true,
+        "required_status_checks": [
+          {
+            "context": "rust / protect / protected-paths",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / api / capabilities",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / api / semver",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / supply-chain / vet",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / supply-chain / audit",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / supply-chain / deny",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / mutants",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / fuzz",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / proptest",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / wit",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / extra-targets",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / msrv",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / cargo-doc",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / doc-test",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / test / cargo-test",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / lint / unsafe",
+            "integration_id": 15368
+          },
+          {
+            "context": "rust / lint / clippy",
+            "integration_id": 15368
+          }
+        ]
+      }
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ]
+      }
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
+    }
+  ],
+  "id": 4242,
+  "node_id": "RRS_example",
+  "source_type": "Repository",
+  "source": "burncloud/example",
+  "current_user_can_bypass": "never",
+  "_links": {
+    "self": {
+      "href": "https://api.github.com/repos/burncloud/example/rulesets/4242"
+    },
+    "html": {
+      "href": "https://github.com/burncloud/example/rules/4242"
+    }
+  },
+  "created_at": "2026-11-25T00:00:00Z",
+  "updated_at": "2026-11-25T00:00:00Z"
+}
