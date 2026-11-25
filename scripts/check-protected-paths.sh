@@ -5,6 +5,8 @@ set -euo pipefail
 print_defaults() {
   cat <<'EOF'
 .github/
+.cargo/
+vendor/
 contracts/
 supply-chain/
 clippy.toml
@@ -12,6 +14,7 @@ rustfmt.toml
 deny.toml
 rust-toolchain
 rust-toolchain.toml
+unsafe-allow.txt
 Cargo.toml[lints]
 EOF
 }
@@ -68,7 +71,10 @@ else
   print_defaults >"$tmp/paths"
 fi
 
-# 去掉空行和注释，避免 input 里的空行把默认值冲掉之后无法判断。
+# 空列表表示用脚本里的默认值，不接受调用方用空字符串拿掉保护。
+if ! grep -Eqv '^[[:space:]]*(#|$)' "$tmp/paths"; then
+  print_defaults >"$tmp/paths"
+fi
 grep -Ev '^[[:space:]]*(#|$)' "$tmp/paths" >"$tmp/patterns" || true
 
 extract_lints() {
@@ -76,9 +82,10 @@ extract_lints() {
   if [[ ! -s "$file" ]]; then
     return 0
   fi
+  # [lints*]、[workspace.lints*]、[patch*]、[replace] 都算受保护表。
   awk '
     /^\[/ {
-      capture = ($0 ~ /^\[lints(\.|])/)
+      capture = ($0 ~ /^\[(lints|patch)(\.|])/ || $0 ~ /^\[replace\]/ || $0 ~ /^\[workspace\.lints(\.|])/)
     }
     capture { print }
   ' "$file" | sed -e 's/[[:space:]]*$//' -e '/^$/d'
@@ -126,7 +133,7 @@ if [[ "$check_lints" -eq 1 ]]; then
       extract_lints "$before" >"$tmp/before"
       extract_lints "$after" >"$tmp/after"
       if ! cmp -s "$tmp/before" "$tmp/after"; then
-        echo "protected: ${path} 的 [lints] 表发生了变化"
+        echo "protected: ${path} 的 [lints]、[workspace.lints]、[patch] 或 [replace] 发生了变化"
         hits=1
       fi
     done <"$lints_file"
@@ -138,7 +145,7 @@ if [[ "$check_lints" -eq 1 ]]; then
       continue
     fi
     if [[ -z "$lints_file" ]] || ! awk -F'|' -v path="$path" '$1 == path { found = 1 } END { exit !found }' "$lints_file"; then
-      echo "protected: ${path} 有改动，但没有提供内容来判断 [lints]，拒绝放行。" >&2
+      echo "protected: ${path} 有改动，但没有提供内容来判断受保护的表，拒绝放行。" >&2
       hits=1
     fi
   done <"$changed"
@@ -150,7 +157,7 @@ if [[ "$hits" -eq 0 ]]; then
 fi
 
 if [[ "$exempt" -eq 1 ]]; then
-  echo "protected: 当前仓库是工作流定义仓库，且变更来自同一仓库。命中项已记录，不阻断。其他仓库会失败。"
+  echo "protected: 当前仓库是 burncloud/ci。命中项已记录，不阻断。其他仓库会失败。"
   exit 0
 fi
 

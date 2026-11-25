@@ -5,5 +5,9 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
 description = "Minimal crate exercised by burncloud/ci workflows."
+rust-version = "1.100.0"
 
 [dependencies]
+
+[dev-dependencies]
+proptest = "=1.12.0"

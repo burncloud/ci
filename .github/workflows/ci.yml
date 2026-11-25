@@ -8,13 +8,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     shell: bash
 
 jobs:
   lint-workflows:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -24,8 +28,6 @@ jobs:
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
-        with:
-          toolchain: stable
 
       - name: Install linters
         run: |
@@ -51,24 +53,15 @@ jobs:
           root=$(pwd)
           tmp=$(mktemp -d)
 
-          extract_default() {
-            awk '
-              $0 ~ /^        default: \|$/ { capture = 1; next }
-              capture && /^          [^ ]/ { sub(/^          /, ""); print; next }
-              capture { exit }
-            ' "$1"
-          }
-          script_defaults=$(bash scripts/check-protected-paths.sh --print-defaults)
-          protect_defaults=$(extract_default .github/workflows/protect.yml)
-          rust_defaults=$(extract_default .github/workflows/rust.yml)
-          if [[ "$script_defaults" != "$protect_defaults" ]] || [[ "$script_defaults" != "$rust_defaults" ]]; then
-            echo "受保护路径默认值在脚本、protect.yml、rust.yml 之间不一致。" >&2
-            echo "script:" >&2
-            printf '%s\n' "$script_defaults" >&2
-            echo "protect.yml:" >&2
-            printf '%s\n' "$protect_defaults" >&2
-            echo "rust.yml:" >&2
-            printf '%s\n' "$rust_defaults" >&2
+          defaults=$(bash scripts/check-protected-paths.sh --print-defaults)
+          for line in .github/ .cargo/ vendor/ unsafe-allow.txt rust-toolchain.toml 'Cargo.toml[lints]'; do
+            if ! printf '%s\n' "$defaults" | grep -Fxq "$line"; then
+              echo "默认路径缺少 ${line}" >&2
+              exit 1
+            fi
+          done
+          if grep -n 'default: |' .github/workflows/protect.yml .github/workflows/rust.yml; then
+            echo "受保护路径默认值只能留在 scripts/check-protected-paths.sh。" >&2
             exit 1
           fi
 
@@ -82,7 +75,7 @@ jobs:
           fi
           bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --exempt
 
-          printf '%s\n' 'crates/foo/deny.toml' 'contracts/api.md' 'supply-chain/config.toml' 'rust-toolchain.toml' > "${tmp}/bad"
+          printf '%s\n' 'crates/foo/deny.toml' 'contracts/api.md' 'supply-chain/config.toml' 'rust-toolchain.toml' '.cargo/config.toml' 'vendor/serde/src/lib.rs' > "${tmp}/bad"
           if bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
             echo "预期受保护文件命中后失败。" >&2
             exit 1
@@ -94,17 +87,36 @@ jobs:
           printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/after" > "${tmp}/lints"
           bash scripts/check-protected-paths.sh --changed "${tmp}/changed" --lints "${tmp}/lints"
 
-          printf '[package]\nname = "x"\n\n[lints.clippy]\npedantic = "allow"\n' > "${tmp}/lints-after"
-          printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/lints-after" > "${tmp}/lints"
-          if bash scripts/check-protected-paths.sh --changed "${tmp}/changed" --lints "${tmp}/lints"; then
-            echo "预期 [lints] 变化失败。" >&2
+          expect_fail() {
+            local label=$1
+            local after=$2
+            printf '%s\n' "$after" > "${tmp}/section-after"
+            printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/section-after" > "${tmp}/lints"
+            if bash scripts/check-protected-paths.sh --changed "${tmp}/changed" --lints "${tmp}/lints"; then
+              echo "预期 ${label} 变化失败。" >&2
+              exit 1
+            fi
+          }
+          expect_fail '[lints]' $'[package]\nname = "x"\n\n[lints.clippy]\npedantic = "allow"\n'
+          expect_fail '[workspace.lints]' $'[package]\nname = "x"\n\n[workspace.lints.clippy]\npedantic = "allow"\n'
+          expect_fail '[patch]' $'[package]\nname = "x"\n\n[patch.crates-io]\nserde = { path = "local/serde" }\n'
+          expect_fail '[replace]' $'[package]\nname = "x"\n\n[replace]\n"serde:1.0.0" = { path = "local/serde" }\n'
+
+          : > "${tmp}/empty-paths"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --paths "${tmp}/empty-paths"; then
+            echo "空路径列表必须回退到默认值并失败。" >&2
             exit 1
           fi
 
           bash scripts/check-unsafe.sh tests/fixture
 
           bad=$(mktemp -d)
-          cp -a tests/fixture/. "$bad/"
+          mkdir -p "$bad/src"
+          cp tests/fixture/Cargo.toml tests/fixture/Cargo.lock "$bad/"
+          cp tests/fixture/src/lib.rs "$bad/src/"
+          printf '\n// mentions unsafe\nconst NOTE: &str = "unsafe";\n' >> "$bad/src/lib.rs"
+          bash scripts/check-unsafe.sh "$bad"
+
           sed -i '/forbid(unsafe_code)/d' "$bad/src/lib.rs"
           if bash scripts/check-unsafe.sh "$bad"; then
             echo "预期缺少 forbid(unsafe_code) 时失败。" >&2
@@ -112,7 +124,9 @@ jobs:
           fi
 
           bad=$(mktemp -d)
-          cp -a tests/fixture/. "$bad/"
+          mkdir -p "$bad/src"
+          cp tests/fixture/Cargo.toml tests/fixture/Cargo.lock "$bad/"
+          cp tests/fixture/src/lib.rs "$bad/src/"
           printf '\nfn hidden() {\n    let _value = unsafe { 1 };\n}\n' >> "$bad/src/lib.rs"
           if bash scripts/check-unsafe.sh "$bad"; then
             echo "预期出现 unsafe 关键字时失败。" >&2
@@ -134,7 +148,12 @@ jobs:
           mkdir -p "${isolated}/crate"
           printf '[package]\nname = "t"\nversion = "0.1.0"\nedition = "2021"\n' > "${isolated}/crate/Cargo.toml"
           if GITHUB_WORKSPACE="$isolated" bash scripts/resolve-deny-config.sh "${isolated}/crate"; then
-            echo "预期没有 deny.toml 且不能下载默认配置时失败。" >&2
+            echo "预期没有 deny.toml 且没有默认文件时失败。" >&2
+            exit 1
+          fi
+          found=$(GITHUB_WORKSPACE="$isolated" DEFAULT_DENY="$root/deny.toml" bash scripts/resolve-deny-config.sh "${isolated}/crate")
+          if [[ "$found" != "$root/deny.toml" ]]; then
+            echo "预期使用 DEFAULT_DENY，实际是 ${found}" >&2
             exit 1
           fi
 
@@ -142,3 +161,7 @@ jobs:
     uses: ./.github/workflows/rust.yml
     with:
       working-directory: tests/fixture
+      run-proptest: true
+      run-fuzz: true
+      run-mutants: true
+      semver-baseline: 19c15f8ba75d81dcc51c89af43b51a386b76f2f3

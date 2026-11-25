@@ -4,10 +4,10 @@ on:
   workflow_call:
     inputs:
       toolchain:
-        description: rustup toolchain
+        description: 仓库没有 rust-toolchain 文件时使用。不要依赖浮动的 stable。
         required: false
         type: string
-        default: stable
+        default: ""
       working-directory:
         description: Cargo workspace 根目录，相对仓库根
         required: false
@@ -28,20 +28,16 @@ defaults:
 
 jobs:
   semver:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Install toolchain
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+      - name: Setup
+        uses: ./.github/actions/setup-rust
         with:
           toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
+          fetch-depth: "0"
+          fetch-tags: "true"
 
       - name: Install cargo-semver-checks
         uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
@@ -54,40 +50,24 @@ jobs:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
           SEMVER_BASELINE: ${{ inputs.semver-baseline }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          JOB_JSON: ${{ toJSON(job) }}
-        run: |
-          set -euo pipefail
-          workflow_repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_JSON")
-          workflow_sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_JSON")
-          if [[ -z "$workflow_repo" || -z "$workflow_sha" || "$workflow_repo" == "null" || "$workflow_sha" == "null" ]]; then
-            echo "semver: 无法从 job 上下文解析工作流定义位置。" >&2
-            jq -r 'keys[]' <<<"$JOB_JSON" >&2
-            exit 1
-          fi
-          curl -fsSL "https://raw.githubusercontent.com/${workflow_repo}/${workflow_sha}/scripts/run-semver-checks.sh" -o "${RUNNER_TEMP}/run-semver-checks.sh"
-          bash "${RUNNER_TEMP}/run-semver-checks.sh"
+        run: bash .burncloud-ci/scripts/run-semver-checks.sh
 
   capabilities:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup
+        uses: ./.github/actions/setup-rust
         with:
-          persist-credentials: false
+          toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
+          components: clippy
 
       - name: Scan capabilities
         env:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
-          JOB_JSON: ${{ toJSON(job) }}
-        run: |
-          set -euo pipefail
-          workflow_repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_JSON")
-          workflow_sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_JSON")
-          if [[ -z "$workflow_repo" || -z "$workflow_sha" || "$workflow_repo" == "null" || "$workflow_sha" == "null" ]]; then
-            echo "capabilities: 无法从 job 上下文解析工作流定义位置。" >&2
-            jq -r 'keys[]' <<<"$JOB_JSON" >&2
-            exit 1
-          fi
-          curl -fsSL "https://raw.githubusercontent.com/${workflow_repo}/${workflow_sha}/scripts/scan-capabilities.sh" -o "${RUNNER_TEMP}/scan-capabilities.sh"
-          bash "${RUNNER_TEMP}/scan-capabilities.sh" "$WORKING_DIRECTORY"
+        run: bash .burncloud-ci/scripts/scan-capabilities.sh "$WORKING_DIRECTORY"
+
+      - name: Reject allow without reason
+        working-directory: ${{ inputs.working-directory }}
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D clippy::allow_attributes_without_reason

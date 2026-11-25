@@ -1,0 +1,9 @@
+# actionlint 1.7.12 的 job 类型还没有 workflow_repository / workflow_sha。
+# 这两个字段是 GitHub 文档里的运行时上下文，用来 checkout 工作流定义本身。
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      - 'property "workflow_(repository|sha)" is not defined'
+  .github/actions/**/action.yml:
+    ignore:
+      - 'property "workflow_(repository|sha)" is not defined'

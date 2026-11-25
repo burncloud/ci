@@ -4,19 +4,10 @@ on:
   workflow_call:
     inputs:
       protected-paths:
-        description: 每行一个受保护路径。目录以 / 结尾并按仓库根前缀匹配；纯文件名匹配任意目录下的同名文件；Cargo.toml[lints] 只在 [lints] 表变化时失败。
+        description: 每行一个受保护路径。留空则用 scripts/check-protected-paths.sh 里的默认列表。
         required: false
         type: string
-        default: |
-          .github/
-          contracts/
-          supply-chain/
-          clippy.toml
-          rustfmt.toml
-          deny.toml
-          rust-toolchain
-          rust-toolchain.toml
-          Cargo.toml[lints]
+        default: ""
 
 permissions:
   contents: read
@@ -27,21 +18,29 @@ defaults:
 
 jobs:
   protected-paths:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+
       - name: Check protected paths
         env:
           REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           PROTECTED_PATHS: ${{ inputs.protected-paths }}
           GH_TOKEN: ${{ github.token }}
-          # actionlint 1.7.12 还不认识 job.workflow_*，运行时对象里有这两个字段。
           JOB_JSON: ${{ toJSON(job) }}
         run: |
           set -euo pipefail
@@ -58,6 +57,10 @@ jobs:
               base=$BASE_SHA
               head=$HEAD_SHA
               ;;
+            merge_group)
+              base=$MERGE_BASE_SHA
+              head=$MERGE_HEAD_SHA
+              ;;
             push)
               base=$BEFORE
               head=$SHA
@@ -68,13 +71,17 @@ jobs:
               ;;
           esac
 
-          if [[ -z "$base" || -z "$head" || "$base" == "null" || "$head" == "null" || "$base" =~ ^0+$ ]]; then
-            echo "protected: 无法确定 diff 范围（base=${base:-empty} head=${head:-empty}），拒绝放行。" >&2
+          if [[ -z "$head" || "$head" == "null" ]]; then
+            echo "protected: 无法确定 diff 的 head，拒绝放行。" >&2
             exit 1
+          fi
+          if [[ -z "$base" || "$base" == "null" || "$base" =~ ^0+$ ]]; then
+            default_branch=$(gh api "repos/${REPO}" --jq .default_branch)
+            base=$(gh api "repos/${REPO}/commits/${default_branch}" --jq .sha)
+            echo "protected: before 不可用，改为和默认分支 ${default_branch} (${base}) 比较。"
           fi
 
           tmp=$(mktemp -d)
-          curl -fsSL "https://raw.githubusercontent.com/${workflow_repo}/${workflow_sha}/scripts/check-protected-paths.sh" -o "${tmp}/check.sh"
           printf '%s\n' "$PROTECTED_PATHS" > "${tmp}/paths"
           if ! gh api "/repos/${REPO}/compare/${base}...${head}" > "${tmp}/compare.json"; then
             echo "protected: compare API 调用失败，拒绝放行。" >&2
@@ -126,7 +133,7 @@ jobs:
           done < "${tmp}/changed"
 
           args=(--changed "${tmp}/changed" --paths "${tmp}/paths" --lints "${tmp}/lints")
-          if [[ "$REPO" == "$workflow_repo" && ( -z "$HEAD_REPO" || "$HEAD_REPO" == "null" || "$HEAD_REPO" == "$REPO" ) ]]; then
+          if [[ "$REPO" == "burncloud/ci" && "$workflow_repo" == "burncloud/ci" ]]; then
             args+=(--exempt)
           fi
-          bash "${tmp}/check.sh" "${args[@]}"
+          bash .burncloud-ci/scripts/check-protected-paths.sh "${args[@]}"

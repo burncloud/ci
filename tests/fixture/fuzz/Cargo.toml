@@ -1,0 +1,23 @@
+[package]
+name = "burncloud-ci-fixture-fuzz"
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+burncloud-ci-fixture = { path = ".." }
+libfuzzer-sys = "=0.4.10"
+
+[[bin]]
+name = "fuzz_add"
+path = "fuzz_targets/fuzz_add.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

@@ -4,22 +4,32 @@ on:
   workflow_call:
     inputs:
       toolchain:
-        description: rustup toolchain
+        description: 仓库没有 rust-toolchain 文件时使用。不要依赖浮动的 stable。
         required: false
         type: string
-        default: stable
+        default: ""
       working-directory:
         description: Cargo workspace 根目录，相对仓库根
         required: false
         type: string
         default: "."
+      targets:
+        description: 额外 cargo check target，逗号或空白分隔。插件仓库可填 wasm32-wasip2。
+        required: false
+        type: string
+        default: ""
+      wit-dir:
+        description: WIT 目录。不存在则跳过。
+        required: false
+        type: string
+        default: wit
       run-proptest:
         description: 为 true 时用 PROPTEST_CASES=256 再跑一遍测试。没有 proptest 依赖则失败。
         required: false
         type: boolean
         default: false
       run-fuzz:
-        description: 为 true 时构建并短跑 fuzz target。没有 fuzz/ 则失败。需要 nightly。
+        description: 为 true 时构建并短跑 fuzz target。没有 fuzz/ 则失败。
         required: false
         type: boolean
         default: false
@@ -38,43 +48,154 @@ defaults:
 
 jobs:
   cargo-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install toolchain
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+      - name: Setup
+        uses: ./.github/actions/setup-rust
         with:
           toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: cargo test
         working-directory: ${{ inputs.working-directory }}
-        run: cargo test --workspace --all-targets
+        run: cargo test --locked --workspace --all-targets --all-features
 
   doc-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install toolchain
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+      - name: Setup
+        uses: ./.github/actions/setup-rust
         with:
           toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: cargo test --doc
         working-directory: ${{ inputs.working-directory }}
-        run: cargo test --workspace --doc
+        run: cargo test --locked --workspace --doc
+
+  cargo-doc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Setup
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: cargo doc
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --workspace --no-deps --all-features
+
+  msrv:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Setup
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Check rust-version
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          mapfile -t rows < <(cargo metadata --no-deps --format-version 1 --locked | jq -r '.packages[] | select(.rust_version != null) | "\(.name)\t\(.rust_version)"')
+          if [[ ${#rows[@]} -eq 0 ]]; then
+            echo "msrv: 没有 crate 写 rust-version，跳过最低版本检查。"
+            exit 0
+          fi
+          for row in "${rows[@]}"; do
+            name=${row%%$'\t'*}
+            version=${row#*$'\t'}
+            echo "msrv: ${name} 使用 rust-version ${version} 运行 cargo check。"
+            rustup toolchain install "$version" --profile minimal
+            cargo "+${version}" check --locked --all-targets --all-features -p "$name"
+          done
+
+  extra-targets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Setup
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Check extra targets
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TARGETS//[[:space:],]/}" ]]; then
+            echo "extra-targets: 未配置额外 target，跳过。插件仓库可以把 targets 设为 wasm32-wasip2。"
+            exit 0
+          fi
+          mapfile -t targets < <(printf '%s\n' "$TARGETS" | tr ', ' '\n' | sed '/^$/d')
+          for target in "${targets[@]}"; do
+            echo "extra-targets: cargo check --target ${target}"
+            rustup target add "$target"
+            cargo check --locked --workspace --all-targets --all-features --target "$target"
+          done
+
+  wit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Setup
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Detect WIT
+        id: wit
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          WIT_DIR: ${{ inputs.wit-dir }}
+        run: |
+          set -euo pipefail
+          if [[ ! -d "$WIT_DIR" ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "wit: 没有 ${WIT_DIR} 目录，跳过 WIT 校验。"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install wasm-tools
+        if: steps.wit.outputs.run == 'true'
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: wasm-tools@1.263.0
+          fallback: none
+
+      - name: wasm-tools component wit
+        if: steps.wit.outputs.run == 'true'
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          WIT_DIR: ${{ inputs.wit-dir }}
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r wit; do
+            found=1
+            echo "wit: 校验 ${wit}"
+            wasm-tools component wit "$wit"
+          done < <(find "$WIT_DIR" -type f -name '*.wit' | sort)
+          if [[ "$found" -eq 0 ]]; then
+            echo "wit: ${WIT_DIR} 里没有 .wit 文件。" >&2
+            exit 1
+          fi
 
   proptest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Gate
@@ -90,17 +211,12 @@ jobs:
             echo "proptest: 输入 run-proptest=false，跳过。"
           fi
 
-      - name: Checkout
+      - name: Setup
         if: steps.gate.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install toolchain
-        if: steps.gate.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        uses: ./.github/actions/setup-rust
         with:
           toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: Run proptest
         if: steps.gate.outputs.run == 'true'
@@ -113,16 +229,16 @@ jobs:
               found=1
               break
             fi
-          done < <(find . -name Cargo.toml -not -path '*/target/*')
+          done < <(find . -name Cargo.toml -not -path '*/target/*' -not -path '*/.burncloud-ci/*')
           if [[ "$found" -ne 1 ]]; then
             echo "proptest: 已开启，但工作目录的 Cargo.toml 中没有 proptest 依赖。请添加依赖，或关闭 run-proptest。" >&2
             exit 1
           fi
           echo "proptest: 使用 PROPTEST_CASES=256 运行 cargo test。"
-          PROPTEST_CASES=256 cargo test --workspace --all-targets --all-features
+          PROPTEST_CASES=256 cargo test --locked --workspace --all-targets --all-features
 
   fuzz:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Gate
@@ -138,11 +254,12 @@ jobs:
             echo "cargo-fuzz: 输入 run-fuzz=false，跳过。"
           fi
 
-      - name: Checkout
+      - name: Setup
         if: steps.gate.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: ./.github/actions/setup-rust
         with:
-          persist-credentials: false
+          toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: Require fuzz targets
         if: steps.gate.outputs.run == 'true'
@@ -160,21 +277,19 @@ jobs:
           fi
           printf '%s\n' "${targets[@]}" > "${RUNNER_TEMP}/fuzz-targets"
 
-      - name: Install toolchain
-        if: steps.gate.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Install cargo-fuzz
-        if: steps.gate.outputs.run == 'true'
-        run: cargo install --locked cargo-fuzz@0.13.2
-
       - name: Install nightly
         if: steps.gate.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
         with:
-          toolchain: nightly
+          toolchain: nightly-2026-11-20
+
+      - name: Install cargo-fuzz
+        if: steps.gate.outputs.run == 'true'
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-fuzz@0.13.2
+          # 该版本的清单里没有 cargo-fuzz，用 cargo-binstall 装预编译包，不从源码编译。
+          fallback: cargo-binstall
 
       - name: Build and run fuzz targets
         if: steps.gate.outputs.run == 'true'
@@ -185,14 +300,16 @@ jobs:
             echo "cargo-fuzz: 需要 g++ 来链接 libFuzzer。" >&2
             exit 1
           fi
-          cargo +nightly fuzz build
+          # cargo-fuzz 0.13.2 的 build 子命令没有 --locked。先用 metadata 卡住锁文件。
+          cargo +nightly-2026-11-20 metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml >/dev/null
+          cargo +nightly-2026-11-20 fuzz build
           while IFS= read -r target; do
             echo "cargo-fuzz: 运行 ${target}，最长 15 秒。"
-            cargo +nightly fuzz run "$target" -- -max_total_time=15
+            cargo +nightly-2026-11-20 fuzz run "$target" -- -max_total_time=15
           done < "${RUNNER_TEMP}/fuzz-targets"
 
   mutants:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Gate
@@ -208,11 +325,13 @@ jobs:
             echo "cargo-mutants: 输入 run-mutants=false，跳过。"
           fi
 
-      - name: Checkout
+      - name: Setup
         if: steps.gate.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: ./.github/actions/setup-rust
         with:
-          persist-credentials: false
+          toolchain: ${{ inputs.toolchain }}
+          working-directory: ${{ inputs.working-directory }}
+          fetch-depth: "0"
 
       - name: Require package
         if: steps.gate.outputs.run == 'true'
@@ -224,12 +343,6 @@ jobs:
             exit 1
           fi
 
-      - name: Install toolchain
-        if: steps.gate.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
       - name: Install cargo-mutants
         if: steps.gate.outputs.run == 'true'
         uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
@@ -240,4 +353,16 @@ jobs:
       - name: cargo mutants
         if: steps.gate.outputs.run == 'true'
         working-directory: ${{ inputs.working-directory }}
-        run: cargo mutants --timeout 120
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" && -n "$BASE_SHA" && "$BASE_SHA" != "null" ]]; then
+            git diff --relative "$BASE_SHA" -- . > "${RUNNER_TEMP}/pr.diff"
+            echo "cargo-mutants: pull request，使用 --in-diff。"
+            cargo mutants --timeout 120 --in-diff "${RUNNER_TEMP}/pr.diff"
+          else
+            echo "cargo-mutants: 非 pull request，检查全部突变。"
+            cargo mutants --timeout 120
+          fi

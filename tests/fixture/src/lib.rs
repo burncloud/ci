@@ -28,4 +28,25 @@ mod tests {
     fn saturates_at_the_top() {
         assert_eq!(add(i64::MAX, 1), i64::MAX);
     }
+
+    #[test]
+    fn saturates_at_the_bottom() {
+        assert_eq!(add(i64::MIN, -1), i64::MIN);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::add;
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn saturating_add_matches_wide_arithmetic(left: i64, right: i64) {
+            let wide = i128::from(left).saturating_add(i128::from(right));
+            let expected = wide.clamp(i128::from(i64::MIN), i128::from(i64::MAX));
+            prop_assert_eq!(i128::from(add(left, right)), expected);
+        }
+    }
 }

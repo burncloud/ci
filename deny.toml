@@ -41,5 +41,11 @@ allow-wildcard-paths = false
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# tag 这一档同时允许更具体的 rev，不允许 branch，也不允许不写说明符。
+required-git-spec = "tag"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
+unused-allowed-org = "allow"
+
+[sources.allow-org]
+github = ["burncloud"]
