@@ -48,7 +48,7 @@ jobs:
 
 ## 版本怎么固定
 
-调用方 `uses` 只允许两种 ref：40 位完整 SHA，或 `vX.Y.Z`。禁止 `v1` 这类浮动标签，也禁止分支名。
+调用方 `uses` 只允许两种 ref：40 位完整 SHA，或 `vX.Y.Z`。禁止 `v1` 这类浮动标签，也禁止分支名。SHA 接受大小写十六进制，`v` 只小写。正则是 `^([0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$`，实现在 [`scripts/check-pinned-ref.sh`](scripts/check-pinned-ref.sh)。
 
 发布时在目标提交上打 `vX.Y.Z`。这个标签打出之后不要移动。调用方要拿后续修复，就改自己的 ref。
 
@@ -154,6 +154,7 @@ bash scripts/scan-capabilities.sh tests/fixture
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py
+bash scripts/check-pinned-ref.sh v1.0.0
 ```
 
 ## 下一步

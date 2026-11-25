@@ -6,7 +6,7 @@
 
 组织级规则集（包括 required workflow）需要 GitHub Team 或 Enterprise。这跟仓库是否公开无关。
 
-免费套餐采用四件事：清单仓库保持公开、`uses` 只引用 40 位完整 SHA 或 `vX.Y.Z` 标签、单仓库规则集、CODEOWNERS。禁止 `v1` 这类浮动标签，也禁止分支名。组织级方案留在本文后半，作为升级到 Team 之后的选项。
+免费套餐采用四件事：清单仓库保持公开、`uses` 只引用 40 位完整 SHA 或 `vX.Y.Z` 标签、单仓库规则集、CODEOWNERS。禁止 `v1` 这类浮动标签，也禁止分支名。SHA 接受大小写十六进制，`v` 只小写，正则是 `^([0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$`。组织级方案留在本文后半，作为升级到 Team 之后的选项。
 
 ## 免费套餐：清单仓库
 
@@ -119,7 +119,7 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 调用方仓库里的 YAML 挡不住改检查。有人可以在 PR 里把 `protected-paths` 改空、换掉 `uses`，或写一个同名空 job 凑状态检查。只配 `required_status_checks` 也不够：不写 `integration_id` 时，普通 commit status 可以冒充通过。
 
-升级后用规则类型 `workflows`，要求 `burncloud/ci` 里某个 ref 上的 `.github/workflows/rust.yml` 必须通过。`repository_id` 是 `1469670652`。ref 只允许 `refs/tags/vX.Y.Z` 或 40 位 SHA。禁止 `v1` 这类浮动标签，也禁止分支名。
+升级后用规则类型 `workflows`，要求 `burncloud/ci` 里某个 ref 上的 `.github/workflows/rust.yml` 必须通过。`repository_id` 是 `1469670652`。ref 只允许 `refs/tags/vX.Y.Z` 或 40 位 SHA。SHA 是 `[0-9a-fA-F]{40}`。禁止 `v1` 这类浮动标签，也禁止分支名。
 
 这一节是升级之后的选项，现在不导入。
 
@@ -176,7 +176,7 @@ jobs:
 
 `rustburn` 负责写代码，是 owner。紧急时他用仓库管理员或组织管理员的 `pull_request` bypass，不能直推。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。组织管理员 bypass 是规则集 API 的行为，不是额外开的口子。组织级规则集也先以 `disabled` 建立，人工核对读回结果后再改为 `active`。
 
-`bypass_actors` 保留全体组织管理员，`actor_type` 是 `OrganizationAdmin`，`actor_id` 用 `1`，`bypass_mode` 是 `pull_request`。导入前如果 API 拒绝这个 id，以组织设置页面导出的值为准。`require_last_push_approval` 先保持 false。
+`bypass_actors` 保留全体组织管理员，`actor_type` 是 `OrganizationAdmin`，`actor_id` 是 `null`，`bypass_mode` 是 `pull_request`。`require_last_push_approval` 先保持 false。
 
 ## 所有仓库的默认分支
 
