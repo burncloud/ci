@@ -20,15 +20,26 @@ jobs:
   rust:
     uses: burncloud/ci/.github/workflows/rust.yml@<不可变 tag 或 SHA>
     with:
-      targets: wasm32-wasip2
       run-proptest: false
       run-fuzz: false
       run-mutants: false
 ```
 
+规则集启用 required workflow 之后，把这份模板里的 `uses` job 删掉。留着会和注入的 `rust.yml` 各跑一遍。
+
+插件仓库要额外检查 wasm 目标时再传 `targets`。这一项不放进上面的通用模板。只检查库和二进制，不编译测试：
+
+```yaml
+jobs:
+  rust:
+    uses: burncloud/ci/.github/workflows/rust.yml@<不可变 tag 或 SHA>
+    with:
+      targets: wasm32-wasip2
+```
+
 仓库根要提交 `rust-toolchain.toml`，不要依赖浮动的 `stable`。工作流先读这个文件（仓库根优先，其次是 `working-directory`），没有才用 `toolchain` 输入。文件本身在默认受保护路径里。
 
-`working-directory` 默认是仓库根。一个仓库里有多个 crate 时，不要共用一个叫 `rust` 的 job，见 [docs/org-ruleset.md](docs/org-ruleset.md)。同一次工作流里如果调用两次 `rust.yml`，每次要传不同的 `concurrency-key`。被调用时 `github.workflow` 是调用方的名字，两次调用共用并发组会把整次运行取消掉。直接由 `pull_request` 触发时留空，同一 PR 的新提交仍会取消旧运行。
+`working-directory` 默认是仓库根。一个仓库里有多个 crate 时，不要共用一个叫 `rust` 的 job，见 [docs/org-ruleset.md](docs/org-ruleset.md)。并发组是 `rust-${{ github.workflow }}-${{ PR 号或 ref }}-${{ inputs.concurrency-key }}`。直接触发时工作流名是 `Rust`；`uses` 调用时是调用方工作流的名字。两边都不传 key 也不会合成同一个组。同一次工作流里如果调用两次，看到的工作流名相同，每次要传不同的 `concurrency-key`，否则后一次会取消整次运行。直接由 `pull_request` 触发时 key 留空，同一 PR 的新提交仍会取消旧运行。
 
 ## 版本怎么固定
 
@@ -138,4 +149,4 @@ actionlint -shellcheck "$(command -v shellcheck)"
 
 ## 下一步
 
-`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用不可变 ref。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。组织规则集先按 [docs/org-ruleset.md](docs/org-ruleset.md) 以 `evaluate` 导入。required workflow 的两段式检查名还没用外部 crate 仓库核对，打 `v1` 之前视为待验证。
+`burncloud/template` 提交 `rust-toolchain.toml`、`Cargo.lock`，并按上面的并发配置引用不可变 ref。有非 burncloud 的第三方依赖时要提交 `supply-chain/`。组织规则集先按 [docs/org-ruleset.md](docs/org-ruleset.md) 以 `evaluate` 导入。`uses` 调用的检查名已经在 template 上看到，是 `rust / lint / fmt` 这种三段式。required workflow 注入后的检查名还没核对，打 `v1` 之前视为待验证。规则集启用之后删掉 template 里的 `uses` job。

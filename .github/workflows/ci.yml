@@ -183,6 +183,9 @@ jobs:
             exit 1
           fi
 
+  # 两次调用的 github.workflow 都是本工作流的名字 CI。
+  # key 必须不同，组名才分别是 rust-CI-<PR>-self-test 和 rust-CI-<PR>-caller-with，
+  # 否则后一次会取消整次运行。
   rust:
     uses: ./.github/workflows/rust.yml
     with:
