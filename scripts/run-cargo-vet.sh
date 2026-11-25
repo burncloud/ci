@@ -6,6 +6,14 @@
 # - 还有其他第三方 crate：失败，并说明要提交 supply-chain/。
 set -euo pipefail
 
+if [[ "${1:-}" == "--classify-source" ]]; then
+  source=${2:-}
+  if [[ "$source" == git+https://github.com/burncloud/* ]]; then
+    exit 0
+  fi
+  exit 1
+fi
+
 write_empty_store() {
   local dest=$1
   cat >"$dest/audits.toml" <<'EOF'
@@ -67,17 +75,17 @@ for row in "${rows[@]}"; do
   rest=${row#*$'\t'}
   version=${rest%%$'\t'*}
   source=${rest#*$'\t'}
-  if [[ "$name" == burncloud-* || "$source" == *github.com/burncloud/* ]]; then
+  if [[ "$source" == git+https://github.com/burncloud/* ]]; then
     trusted+=("${name}"$'\t'"${version}")
   else
-    other+=("${name} ${version}")
+    other+=("${name} ${version} ${source}")
   fi
 done
 
 if [[ ${#other[@]} -gt 0 ]]; then
   echo "cargo-vet: 调用方没有 supply-chain/，且存在未由 burncloud/ci 策略覆盖的第三方 crate：" >&2
   printf '  %s\n' "${other[@]}" >&2
-  echo "cargo-vet: burncloud-* 以及 github.com/burncloud 的 git 依赖会按组织 crate 信任。" >&2
+  echo "cargo-vet: 只有 source 以 git+https://github.com/burncloud/ 开头的依赖会被自动信任。同名的 crates.io 包不会。" >&2
   echo "cargo-vet: 其余依赖请 cargo vet init，提交 supply-chain/，或 cargo vet import mozilla 后再 certify。" >&2
   exit 1
 fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 确认每个 lib/bin 根文件含有 #![forbid(unsafe_code)]，并拒绝源码里的 unsafe 整词。
-# unsafe_code 这个标识符不含独立的 unsafe 单词，因此属性本身不会被第二次检查误伤。
+# 用 Cargo 清单里的 [lints.rust] unsafe_code = "forbid" 要求编译器拒绝 unsafe。
+# 不扫描源码文本。需要 unsafe 的 crate 把包名写进受保护的 unsafe-crates.txt。
 set -euo pipefail
 
 wd="${1:-.}"
@@ -12,144 +12,110 @@ if [[ ! -f "$manifest" ]]; then
   exit 1
 fi
 
-metadata=$(cargo metadata --no-deps --format-version 1 --manifest-path "$manifest")
-mapfile -t roots < <(printf '%s\n' "$metadata" | jq -r '.packages[].targets[] | select(any(.kind[]; . == "lib" or . == "bin")) | .src_path')
-
-if [[ ${#roots[@]} -eq 0 ]]; then
-  echo "unsafe: 没有找到 lib 或 bin 的 crate 根。" >&2
-  exit 1
-fi
-
-missing=0
-for root in "${roots[@]}"; do
-  if [[ ! -f "$root" ]]; then
-    echo "unsafe: crate 根不存在: ${root}" >&2
-    missing=1
-    continue
-  fi
-  if ! grep -Eq '^[[:space:]]*#!\[forbid\(unsafe_code\)\][[:space:]]*$' "$root"; then
-    echo "unsafe: ${root} 缺少 #![forbid(unsafe_code)]。" >&2
-    missing=1
-  fi
-done
-
-if [[ "$missing" -ne 0 ]]; then
-  exit 1
-fi
-
-python3 - "$wd" <<'PY'
-import pathlib
-import re
+export CHECK_UNSAFE_WD="$wd"
+export CHECK_UNSAFE_MANIFEST="$manifest"
+python3 - <<'PY'
+import os
+import subprocess
 import sys
+import tomllib
+from pathlib import Path
 
-root = pathlib.Path(sys.argv[1]).resolve()
-allow_paths = []
-for candidate in (root / "unsafe-allow.txt",):
-    if candidate.is_file():
-        allow_paths.append(candidate)
-workspace = pathlib.Path(
-    __import__("os").environ.get("GITHUB_WORKSPACE", "")
-).resolve() if __import__("os").environ.get("GITHUB_WORKSPACE") else None
-if workspace is not None:
-    repo_allow = workspace / "unsafe-allow.txt"
-    if repo_allow.is_file() and repo_allow not in allow_paths:
-        allow_paths.append(repo_allow)
+wd = Path(os.environ["CHECK_UNSAFE_WD"])
+manifest = Path(os.environ["CHECK_UNSAFE_MANIFEST"])
 
-allowed_files = set()
-allowed_lines = set()
-for allow_file in allow_paths:
-    base = allow_file.parent
-    for raw in allow_file.read_text(encoding="utf-8").splitlines():
+def load_names(path: Path) -> set[str]:
+    if not path.is_file():
+        return set()
+    names = set()
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        if ":" in line:
-            path_text, line_no = line.rsplit(":", 1)
-            if line_no.isdigit():
-                allowed_lines.add((str((base / path_text).resolve()), int(line_no)))
-                continue
-        allowed_files.add(str((base / line).resolve()))
+        if line:
+            names.add(line)
+    return names
 
-def blank_comments_and_strings(src: str) -> str:
-    out = []
-    i = 0
-    n = len(src)
-    while i < n:
-        if src.startswith("/*", i):
-            end = src.find("*/", i + 2)
-            chunk = src[i:] if end < 0 else src[i : end + 2]
-            out.append(re.sub(r"[^\n]", " ", chunk))
-            i = n if end < 0 else end + 2
-            continue
-        if src.startswith("//", i):
-            end = src.find("\n", i)
-            if end < 0:
-                out.append(" " * (n - i))
+exempt = set()
+for candidate in (wd / "unsafe-crates.txt",):
+    exempt |= load_names(candidate)
+workspace_env = os.environ.get("GITHUB_WORKSPACE")
+if workspace_env:
+    root_list = Path(workspace_env) / "unsafe-crates.txt"
+    if root_list != wd / "unsafe-crates.txt":
+        exempt |= load_names(root_list)
+
+meta = subprocess.check_output(
+    [
+        "cargo",
+        "metadata",
+        "--no-deps",
+        "--format-version",
+        "1",
+        "--manifest-path",
+        str(manifest),
+    ],
+    text=True,
+)
+import json
+
+packages = json.loads(meta)["packages"]
+manifests = {}
+for package in packages:
+    path = Path(package["manifest_path"])
+    if ".burncloud-ci" in path.parts:
+        continue
+    manifests[path] = package["name"]
+
+def read_toml(path: Path) -> dict:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+def level_of(lints: object) -> str | None:
+    if not isinstance(lints, dict):
+        return None
+    rust = lints.get("rust")
+    if not isinstance(rust, dict):
+        return None
+    value = rust.get("unsafe_code")
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        inner = value.get("level")
+        if isinstance(inner, str):
+            return inner
+    return None
+
+def forbidden(package_manifest: Path, package_doc: dict) -> bool:
+    lints = package_doc.get("lints")
+    if isinstance(lints, dict) and lints.get("workspace") is True:
+        root = package_manifest
+        while True:
+            candidate = root / "Cargo.toml"
+            if candidate.is_file() and candidate != package_manifest:
+                workspace_doc = read_toml(candidate)
+                workspace = workspace_doc.get("workspace")
+                if isinstance(workspace, dict):
+                    return level_of(workspace.get("lints")) == "forbid"
+            if root.parent == root:
                 break
-            out.append(" " * (end - i))
-            i = end
-            continue
-        if src[i] in {'"', "'"} or src.startswith('r#"', i) or src.startswith("r#'", i) or (
-            src[i] == "r" and i + 1 < n and src[i + 1] in {'"', "'"}
-        ):
-            # 粗略抹掉字符串，保留换行，避免注释和字面量里的 unsafe 被当成代码。
-            quote = src[i]
-            hashes = 0
-            if src[i] == "r":
-                j = i + 1
-                while j < n and src[j] == "#":
-                    hashes += 1
-                    j += 1
-                if j >= n or src[j] not in {'"', "'"}:
-                    out.append(src[i])
-                    i += 1
-                    continue
-                quote = src[j]
-                start = i
-                i = j + 1
-                closer = quote + ("#" * hashes)
-                end = src.find(closer, i)
-                chunk = src[start:] if end < 0 else src[start : end + len(closer)]
-                out.append(re.sub(r"[^\n]", " ", chunk))
-                i = n if end < 0 else end + len(closer)
-                continue
-            start = i
-            i += 1
-            while i < n:
-                if src[i] == "\\":
-                    i += 2
-                    continue
-                if src[i] == "\n" and quote == "'":
-                    break
-                if src[i] == quote:
-                    i += 1
-                    break
-                i += 1
-            out.append(re.sub(r"[^\n]", " ", src[start:i]))
-            continue
-        out.append(src[i])
-        i += 1
-    return "".join(out)
+            root = root.parent
+        return False
+    return level_of(lints) == "forbid"
 
-hits = []
-for path in root.rglob("*.rs"):
-    if any(part in {"target", ".git"} for part in path.parts):
+failed = False
+for path, name in sorted(manifests.items(), key=lambda item: item[1]):
+    if name in exempt:
+        print(f"unsafe: {name} 在 unsafe-crates.txt 中，跳过 forbid 要求。")
         continue
-    resolved = str(path.resolve())
-    if resolved in allowed_files:
+    doc = read_toml(path)
+    if forbidden(path, doc):
+        print(f"unsafe: {name} 的清单要求编译器 forbid(unsafe_code)。")
         continue
-    stripped = blank_comments_and_strings(path.read_text(encoding="utf-8"))
-    for number, line in enumerate(stripped.splitlines(), start=1):
-        if (resolved, number) in allowed_lines:
-            continue
-        if re.search(r"\bunsafe\b", line):
-            original = path.read_text(encoding="utf-8").splitlines()[number - 1]
-            hits.append(f"{path}:{number}:{original}")
+    print(
+        f"unsafe: {name} ({path}) 没有 [lints.rust] unsafe_code = \"forbid\"，也没有列入 unsafe-crates.txt。",
+        file=sys.stderr,
+    )
+    failed = True
 
-if hits:
-    print("\n".join(hits), file=sys.stderr)
-    print("unsafe: 上面的代码行含有 unsafe 关键字。注释、字符串和 unsafe-allow.txt 已排除。", file=sys.stderr)
+if failed:
     sys.exit(1)
+print(f"unsafe: 已核验 {len(manifests)} 个 crate 的清单。")
 PY
-
-echo "unsafe: 已检查 ${#roots[@]} 个 crate 根，源码中没有 unsafe 关键字。"

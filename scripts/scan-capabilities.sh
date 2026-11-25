@@ -22,7 +22,7 @@ patterns=(
 
 echo "capabilities: 占位报告。当前只统计下面这些路径，不阻断。"
 for pattern in "${patterns[@]}"; do
-  matches=$(grep -RIn --include='*.rs' --exclude-dir=target --exclude-dir=.git -F -e "$pattern" "$wd" || true)
+  matches=$(grep -RIn --include='*.rs' --exclude-dir=target --exclude-dir=.git --exclude-dir=.burncloud-ci -F -e "$pattern" "$wd" || true)
   if [[ -z "$matches" ]]; then
     echo "${pattern}: 0"
     continue

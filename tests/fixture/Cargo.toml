@@ -7,6 +7,9 @@ publish = false
 description = "Minimal crate exercised by burncloud/ci workflows."
 rust-version = "1.100.0"
 
+[lints.rust]
+unsafe_code = "forbid"
+
 [dependencies]
 
 [dev-dependencies]

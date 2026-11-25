@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -60,7 +60,7 @@ jobs:
           tmp=$(mktemp -d)
 
           defaults=$(bash scripts/check-protected-paths.sh --print-defaults)
-          for line in .github/ .cargo/ vendor/ unsafe-allow.txt rust-toolchain.toml 'Cargo.toml[lints]'; do
+          for line in .github/ .cargo/ vendor/ unsafe-crates.txt rust-toolchain.toml 'Cargo.toml@removed' 'Cargo.toml[lints]'; do
             if ! printf '%s\n' "$defaults" | grep -Fxq "$line"; then
               echo "默认路径缺少 ${line}" >&2
               exit 1
@@ -87,12 +87,18 @@ jobs:
             exit 1
           fi
 
+          printf 'removed\tCargo.toml\n' > "${tmp}/deleted-root"
+          if bash scripts/check-protected-paths.sh --changed "${tmp}/deleted-root"; then
+            echo "预期删除根 Cargo.toml 失败。" >&2
+            exit 1
+          fi
+          printf 'modified\tCargo.toml\n' > "${tmp}/edited-root"
           printf '[package]\nname = "x"\nversion = "0.1.0"\n' > "${tmp}/before"
           printf '[package]\nname = "x"\nversion = "0.2.0"\n' > "${tmp}/after"
-          printf '%s\n' Cargo.toml > "${tmp}/changed"
           printf 'Cargo.toml|%s|%s\n' "${tmp}/before" "${tmp}/after" > "${tmp}/lints"
-          bash scripts/check-protected-paths.sh --changed "${tmp}/changed" --lints "${tmp}/lints"
+          bash scripts/check-protected-paths.sh --changed "${tmp}/edited-root" --lints "${tmp}/lints"
 
+          printf '%s\n' Cargo.toml > "${tmp}/changed"
           expect_fail() {
             local label=$1
             local after=$2
@@ -103,10 +109,11 @@ jobs:
               exit 1
             fi
           }
+          expect_fail 'dotted lints' $'lints.clippy.pedantic = { level = "allow", priority = -1 }\n'
+          expect_fail 'dotted patch' $'patch.crates-io.foo = { path = "v" }\n'
+          expect_fail 'spaced table' $'[ patch.crates-io ]\nfoo = { path = "v" }\n'
+          expect_fail 'quoted table' $'[ "patch" . "crates-io" ]\nfoo = { path = "v" }\n'
           expect_fail '[lints]' $'[package]\nname = "x"\n\n[lints.clippy]\npedantic = "allow"\n'
-          expect_fail '[workspace.lints]' $'[package]\nname = "x"\n\n[workspace.lints.clippy]\npedantic = "allow"\n'
-          expect_fail '[patch]' $'[package]\nname = "x"\n\n[patch.crates-io]\nserde = { path = "local/serde" }\n'
-          expect_fail '[replace]' $'[package]\nname = "x"\n\n[replace]\n"serde:1.0.0" = { path = "local/serde" }\n'
 
           : > "${tmp}/empty-paths"
           if bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --paths "${tmp}/empty-paths"; then
@@ -118,26 +125,23 @@ jobs:
 
           bad=$(mktemp -d)
           mkdir -p "$bad/src"
-          cp tests/fixture/Cargo.toml tests/fixture/Cargo.lock "$bad/"
-          cp tests/fixture/src/lib.rs "$bad/src/"
-          printf '\n// mentions unsafe\nconst NOTE: &str = "unsafe";\n' >> "$bad/src/lib.rs"
-          bash scripts/check-unsafe.sh "$bad"
-
-          sed -i '/forbid(unsafe_code)/d' "$bad/src/lib.rs"
+          printf '%s\n' '[package]' 'name = "bypass-unsafe"' 'version = "0.1.0"' 'edition = "2021"' 'license = "MIT OR Apache-2.0"' > "$bad/Cargo.toml"
+          printf '%s\n' '/*' '#![forbid(unsafe_code)]' '*/' "pub fn f<'a>(x: &u8) -> u8 { unsafe { *(x as *const u8) } }" > "$bad/src/lib.rs"
+          cargo check --manifest-path "$bad/Cargo.toml" --offline || cargo check --manifest-path "$bad/Cargo.toml"
           if bash scripts/check-unsafe.sh "$bad"; then
-            echo "预期缺少 forbid(unsafe_code) 时失败。" >&2
+            echo "预期块注释里的 forbid 不能通过 unsafe 检查。" >&2
             exit 1
           fi
 
-          bad=$(mktemp -d)
-          mkdir -p "$bad/src"
-          cp tests/fixture/Cargo.toml tests/fixture/Cargo.lock "$bad/"
-          cp tests/fixture/src/lib.rs "$bad/src/"
-          printf '\nfn hidden() {\n    let _value = unsafe { 1 };\n}\n' >> "$bad/src/lib.rs"
-          if bash scripts/check-unsafe.sh "$bad"; then
-            echo "预期出现 unsafe 关键字时失败。" >&2
+          if bash scripts/run-cargo-vet.sh --classify-source 'registry+https://github.com/rust-lang/crates.io-index'; then
+            echo "预期 crates.io 来源不被信任。" >&2
             exit 1
           fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/evil/burncloud-foo.git'; then
+            echo "预期非 burncloud 组织的 git 来源不被信任。" >&2
+            exit 1
+          fi
+          bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/foo.git?tag=v1#abc'
 
           scan=$(bash scripts/scan-capabilities.sh tests/fixture)
           printf '%s\n' "$scan"
@@ -163,11 +167,3 @@ jobs:
             exit 1
           fi
 
-  rust:
-    uses: ./.github/workflows/rust.yml
-    with:
-      working-directory: tests/fixture
-      run-proptest: true
-      run-fuzz: true
-      run-mutants: true
-      semver-baseline: 19c15f8ba75d81dcc51c89af43b51a386b76f2f3

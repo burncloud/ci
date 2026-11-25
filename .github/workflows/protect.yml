@@ -99,7 +99,7 @@ jobs:
             exit 1
           fi
 
-          jq -r '.files[]? | .filename, .previous_filename // empty' "${tmp}/compare.json" | sed '/^$/d' | sort -u > "${tmp}/changed"
+          jq -r '.files[]? | "\(.status)\t\(.filename)", (if .previous_filename then "removed\t\(.previous_filename)" else empty end)' "${tmp}/compare.json" | sed '/^$/d' | sort -u > "${tmp}/changed"
 
           fetch_file() {
             local path=$1
@@ -119,7 +119,11 @@ jobs:
           }
 
           : > "${tmp}/lints"
-          while IFS= read -r path; do
+          while IFS= read -r raw; do
+            path=$raw
+            if [[ "$raw" == *$'\t'* ]]; then
+              path=${raw#*$'\t'}
+            fi
             base_name=$(basename "$path")
             if [[ "$base_name" != "Cargo.toml" ]]; then
               continue

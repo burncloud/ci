@@ -56,7 +56,7 @@ permissions:
 
 concurrency:
   group: rust-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   resolve:
@@ -77,10 +77,10 @@ jobs:
           set -euo pipefail
           if [[ -f Cargo.toml ]]; then
             echo "dir=." >> "$GITHUB_OUTPUT"
-          elif [[ -f tests/fixture/Cargo.toml ]]; then
+          elif [[ "$GITHUB_REPOSITORY" == "burncloud/ci" && -f tests/fixture/Cargo.toml ]]; then
             echo "dir=tests/fixture" >> "$GITHUB_OUTPUT"
           else
-            echo "直接触发时没有找到 Cargo.toml。" >&2
+            echo "没有仓库根 Cargo.toml。只有 burncloud/ci 可以回退到 tests/fixture。" >&2
             exit 1
           fi
 
@@ -101,9 +101,9 @@ jobs:
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
       targets: ${{ inputs.targets }}
       wit-dir: ${{ inputs.wit-dir || 'wit' }}
-      run-proptest: ${{ inputs.run-proptest == true }}
-      run-fuzz: ${{ inputs.run-fuzz == true }}
-      run-mutants: ${{ inputs.run-mutants == true }}
+      run-proptest: ${{ github.repository == 'burncloud/ci' || inputs.run-proptest == true }}
+      run-fuzz: ${{ github.repository == 'burncloud/ci' || inputs.run-fuzz == true }}
+      run-mutants: ${{ github.repository == 'burncloud/ci' || inputs.run-mutants == true }}
 
   supply-chain:
     needs: resolve
@@ -120,7 +120,7 @@ jobs:
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
-      semver-baseline: ${{ inputs.semver-baseline || 'auto' }}
+      semver-baseline: ${{ github.repository == 'burncloud/ci' && '19c15f8ba75d81dcc51c89af43b51a386b76f2f3' || inputs.semver-baseline || 'auto' }}
 
   protect:
     needs: resolve

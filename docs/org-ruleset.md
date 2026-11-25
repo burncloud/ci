@@ -8,7 +8,7 @@
 
 主方案是规则类型 `workflows`，要求 `burncloud/ci` 里某个不可变 ref 上的 `.github/workflows/rust.yml` 必须通过。`repository_id` 是 `1469670652`。ref 用 `refs/tags/vX.Y.Z` 或 40 位 SHA，不要用会移动的 `v1`。
 
-这条规则跑的是本仓库的工作流，inputs 用默认值，调用方改不了路径列表。不要再同时让每个 crate 仓库用 `uses` 跑一遍，否则 CI 会跑两遍。调用方文件可以留着给人读，但安全边界是这条规则。
+这条规则直接运行本仓库的 `rust.yml`，不会传入 inputs。`working-directory`、开关和 semver 基线在表达式里用 `||` 落到空值或 `auto`；受保护路径输入为空时，脚本使用自己的默认列表。调用方因此改不了这套默认行为。不要再同时让每个 crate 仓库用 `uses` 跑一遍，否则 CI 会跑两遍。调用方文件可以留着给人读，但安全边界是这条规则。
 
 `rust.yml` 在 `burncloud/ci` 里作为顶层工作流跑过一次（https://github.com/burncloud/ci/actions/runs/45523156265），检查名是两段。组织规则把同一文件注入到别的 crate 仓库时，名字还没有核对，**打 v1 前待验证**：
 
@@ -32,7 +32,7 @@
 - `protect / protected-paths`
 - `resolve`
 
-这些两段式名字是按 job id 推断的，**待用真实 crate 仓库验证**。在外部仓库看到真实名字之前，不要把规则集改成 `active`。本仓库自己的 `ci.yml` 用 job id `rust` 再调用一次，那一组名字会多一个 `rust /` 前缀；那是调用方前缀，不是 required workflow 的名字。
+这些两段式名字来自 `burncloud/ci` 上把 `rust.yml` 当顶层工作流跑出来的结果。组织规则把同一文件注入到别的 crate 仓库时，名字还没有核对，**打 v1 前待验证**。在那之前，下面的 JSON 不包含 `required_status_checks`，避免名字对不上时所有 PR 被永远卡住。`burncloud/ci` 自己的 `ci.yml` 只跑 `lint-workflows`，不再用 job id `rust` 包一层。
 
 ## 多个 working-directory
 
@@ -55,9 +55,9 @@ jobs:
 
 ## 谁来批准
 
-批准必须来自 PR 作者以外的主体：另一个独立账号、专门的 review 账号，或 GitHub App。现在的 PR 作者是 `rustburn`。如果组织里能批准的人只有他一个，他不能既写 PR 又当唯一审批人。这种时候保持 `evaluate`，不要改成 `active`。
+审批人用哪个账号由仓库所有者决定，这里不指定。如果 PR 作者本身是组织管理员（当前作者 `rustburn` 如果是），`bypass_actors` 里的组织管理员身份可以让他绕过审批。这是规则集 API 的行为，不是额外开的口子。在决定审批账号之前保持 `evaluate`。
 
-`bypass_actors` 保留全体组织管理员，`actor_type` 是 `OrganizationAdmin`，`actor_id` 用 `1`，`bypass_mode` 是 `pull_request`。这只给紧急情况用，并且只在 pull request 上绕过，会留下 bypass 记录。导入前如果 API 拒绝这个 id，以组织设置页面导出的值为准。`require_last_push_approval` 先保持 false；有了第二个审批人再打开，否则作者无法让别人批准自己刚推的提交。
+`bypass_actors` 保留全体组织管理员，`actor_type` 是 `OrganizationAdmin`，`actor_id` 用 `1`，`bypass_mode` 是 `pull_request`。导入前如果 API 拒绝这个 id，以组织设置页面导出的值为准。`require_last_push_approval` 先保持 false。
 
 ## 所有仓库的默认分支
 
@@ -65,7 +65,7 @@ jobs:
 - 必须走 pull request，从而禁止直接推送。
 - 至少一个来自非作者主体的批准。新提交使旧批准失效。
 - 只允许 squash 和 rebase，并要求线性历史。
-- required workflow 如上。状态检查如果要列，每条都带 `"integration_id": 15368`，避免 commit status 伪造。
+- required workflow 如上。在外部仓库核对出真实检查名之前，不配 `required_status_checks`。
 - 分支必须包含最新的默认分支。
 
 ## `burncloud/ci`
@@ -141,39 +141,12 @@ gh api --method POST /orgs/burncloud/rulesets --input burncloud-ci.json
           }
         ]
       }
-    },
-    {
-      "type": "required_status_checks",
-      "parameters": {
-        "strict_required_status_checks_policy": true,
-        "do_not_enforce_on_create": true,
-        "required_status_checks": [
-          {"context": "lint / fmt", "integration_id": 15368},
-          {"context": "lint / clippy", "integration_id": 15368},
-          {"context": "lint / unsafe", "integration_id": 15368},
-          {"context": "test / cargo-test", "integration_id": 15368},
-          {"context": "test / doc-test", "integration_id": 15368},
-          {"context": "test / cargo-doc", "integration_id": 15368},
-          {"context": "test / msrv", "integration_id": 15368},
-          {"context": "test / extra-targets", "integration_id": 15368},
-          {"context": "test / wit", "integration_id": 15368},
-          {"context": "test / proptest", "integration_id": 15368},
-          {"context": "test / fuzz", "integration_id": 15368},
-          {"context": "test / mutants", "integration_id": 15368},
-          {"context": "supply-chain / deny", "integration_id": 15368},
-          {"context": "supply-chain / audit", "integration_id": 15368},
-          {"context": "supply-chain / vet", "integration_id": 15368},
-          {"context": "api / semver", "integration_id": 15368},
-          {"context": "api / capabilities", "integration_id": 15368},
-          {"context": "protect / protected-paths", "integration_id": 15368}
-        ]
-      }
     }
   ]
 }
 ```
 
-上面的 `context` 与 `burncloud/ci` 上 `rust.yml` 顶层运行看到的名字一致。同一个 required workflow 进到其他 crate 仓库后的名字，打 v1 前仍待验证。
+在外部 crate 仓库核对出 required workflow 的真实检查名之前，不把同名 `required_status_checks` 和上面的 `workflows` 规则放在一起。名字若对不上，所有 PR 会一直等一个不会出现的检查。
 
 ### burncloud-ci.json
 

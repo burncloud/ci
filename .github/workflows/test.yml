@@ -263,7 +263,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
       - name: Checkout workflow scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -313,17 +313,24 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           WIT_DIR: ${{ inputs.wit-dir }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          found=0
-          while IFS= read -r wit; do
-            found=1
-            echo "wit: 校验 ${wit}"
-            wasm-tools component wit "$wit"
-          done < <(find "$WIT_DIR" -type f -name '*.wit' | sort)
-          if [[ "$found" -eq 0 ]]; then
+          if ! find "$WIT_DIR" -type f -name '*.wit' | grep -q .; then
             echo "wit: ${WIT_DIR} 里没有 .wit 文件。" >&2
             exit 1
+          fi
+          echo "wit: 校验目录 ${WIT_DIR}"
+          wasm-tools component wit "$WIT_DIR"
+          if [[ -z "${BASE_SHA:-}" || "$BASE_SHA" == "null" ]]; then
+            echo "wit: 没有基线提交，跳过接口差异报告。"
+            exit 0
+          fi
+          echo "wit: 与基线 ${BASE_SHA} 的差异。没有单独的 WIT 兼容性工具，这里只报告，不因此失败。"
+          if git cat-file -e "${BASE_SHA}:${WIT_DIR}" 2>/dev/null; then
+            git diff --relative "$BASE_SHA" -- "$WIT_DIR" || true
+          else
+            echo "wit: 基线 ${BASE_SHA} 上没有 ${WIT_DIR}，视为新接口。"
           fi
 
   proptest:

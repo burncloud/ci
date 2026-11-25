@@ -99,7 +99,6 @@ jobs:
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
         with:
           toolchain: ${{ steps.resolve.outputs.toolchain }}
-          components: clippy
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -110,7 +109,3 @@ jobs:
         env:
           WORKING_DIRECTORY: ${{ inputs.working-directory }}
         run: bash .burncloud-ci/scripts/scan-capabilities.sh "$WORKING_DIRECTORY"
-
-      - name: Reject allow without reason
-        working-directory: ${{ inputs.working-directory }}
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D clippy::allow_attributes_without_reason

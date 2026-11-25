@@ -15,7 +15,7 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   rust:
     uses: burncloud/ci/.github/workflows/rust.yml@<不可变 tag 或 SHA>
@@ -51,8 +51,8 @@ jobs:
 | job | 做什么 |
 | --- | --- |
 | `fmt` | `cargo fmt --all --check` |
-| `clippy` | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic` |
-| `unsafe` | 每个 lib/bin 根文件必须有 `#![forbid(unsafe_code)]`。再在去掉注释和字符串之后搜索 `unsafe` 整词。`unsafe-allow.txt` 可以按文件或 `路径:行号` 放行，这个文件在默认受保护路径里。 |
+| `clippy` | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -D clippy::allow_attributes_without_reason` |
+| `unsafe` | 读每个 crate 的 `Cargo.toml`。必须有 `[lints.rust] unsafe_code = "forbid"`（或继承 workspace 的同名设置），由编译器在 `cargo clippy` / `cargo test` 时强制。需要 unsafe 的包把包名写进受保护的 `unsafe-crates.txt`。不再扫描源码文本。 |
 
 ### 2. 测试 `test.yml`
 
@@ -63,7 +63,7 @@ jobs:
 | `cargo-doc` | `RUSTDOCFLAGS=-D warnings cargo doc --locked --workspace --no-deps --all-features` |
 | `msrv` | 按每个 crate 的 `rust-version` 跑 `cargo check --locked`。都没写就跳过并说明。 |
 | `extra-targets` | `targets` 输入为空则跳过。插件仓库可传 `wasm32-wasip2`。 |
-| `wit` | 没有 `wit/`（或 `wit-dir`）就跳过。有目录则用 `wasm-tools component wit` 校验每个 `.wit`。 |
+| `wit` | 没有 `wit/`（或 `wit-dir`）就跳过。有目录则对整个目录跑一次 `wasm-tools component wit`。若有基线提交，再用 `git diff` 报告接口差异；没有成熟的 WIT 兼容性工具，差异不因此失败。 |
 | `proptest` | 默认关。打开后没有 `proptest` 依赖则失败；有则 `PROPTEST_CASES=256`。 |
 | `fuzz` | 默认关。打开后没有 `fuzz/Cargo.toml` 或 target 则失败。有则用 `nightly-2026-11-20` 构建并每个目标最多跑 15 秒。`cargo-fuzz` 0.13.2 的 build 子命令没有 `--locked`，所以先 `cargo metadata --locked`。Linux 预编译包是 musl，构建时显式指定 `x86_64-unknown-linux-gnu`，否则会去编 musl 目标。 |
 | `mutants` | 默认关。pull request 上用 `git diff --relative` 加 `--in-diff`；其他事件检查全部突变。 |
@@ -82,7 +82,7 @@ jobs:
 
 - 已有 `supply-chain/config.toml`：`cargo vet --locked` 用调用方的策略。
 - 没有目录，也没有第三方依赖：临时空策略，真跑 `cargo vet`。
-- 没有目录，但第三方依赖全是 `burncloud-*` 或 `github.com/burncloud/` 的 git 依赖：按统一策略写入 `safe-to-deploy` 和 `safe-to-run` 豁免后再跑。
+- 没有目录，但第三方依赖的 source 全部以 `git+https://github.com/burncloud/` 开头：按统一策略写入 `safe-to-deploy` 和 `safe-to-run` 豁免后再跑。crates.io 上同名的 `burncloud-*` 包不会被信任。
 - 还有其他第三方 crate：失败。请 `cargo vet init` 并提交 `supply-chain/`，或 `cargo vet import mozilla` 后再 certify。
 
 ### 4. 接口与能力 `api.yml`
@@ -90,11 +90,11 @@ jobs:
 | job | 做什么 |
 | --- | --- |
 | `semver` | `cargo semver-checks --baseline-rev`。`auto` 在 pull request 上用 base sha，否则用最新 tag。基线上没有该清单时视为新 crate，说明后跳过。 |
-| `capabilities` | 先打印能力报告，再跑 `cargo clippy --locked --workspace --all-targets --all-features -- -D clippy::allow_attributes_without_reason`。没有 `reason` 的 `#[allow]` 会失败。 |
+| `capabilities` | 只打印能力报告，不阻断。没有 `reason` 的 `#[allow]` 由 lint 层的 clippy 拒绝。 |
 
 能力路线图：
 
-1. 现在：报告 `std::fs`、`std::net`、`std::process`、`std::env`、`std::thread`、`std::os` 以及对应的 tokio 路径，并且拒绝不写理由的 `allow`。报告本身不阻断。
+1. 现在：报告 `std::fs`、`std::net`、`std::process`、`std::env`、`std::thread`、`std::os` 以及对应的 tokio 路径。报告不阻断。不写理由的 `allow` 放在 clippy 里拒绝。
 2. 下一步：把报告和一份受保护的能力清单对比，未声明的 `std::fs` / `net` / `process` 直接失败。
 3. 再下一步：用 capability crate 或 sandbox 表达能力，而不是只靠文本扫描。
 
@@ -102,7 +102,7 @@ jobs:
 
 不 checkout 调用方仓库，不执行调用方代码。变更列表来自 compare API。`Cargo.toml` 的受保护表用 contents API 读文本再比较。
 
-默认路径只写在 [`scripts/check-protected-paths.sh`](scripts/check-protected-paths.sh)。`protect.yml` 和 `rust.yml` 的输入留空时用这份列表，空字符串不会把保护拿掉。当前默认值包括 `.github/`、`.cargo/`、`vendor/`、`contracts/`、`supply-chain/`、clippy/rustfmt/deny 配置、`rust-toolchain`、`rust-toolchain.toml`、`unsafe-allow.txt`，以及 `Cargo.toml` 里的 `[lints]`、`[workspace.lints]`、`[patch]`、`[replace]`。`build.rs` 先不放进默认列表；个别仓库可以在输入里追加。
+默认路径只写在 [`scripts/check-protected-paths.sh`](scripts/check-protected-paths.sh)。required workflow 不会传入 `protected-paths`，输入为空时脚本使用这份默认列表。非空输入会整份替换默认列表，不是追加。当前默认值包括 `.github/`、`.cargo/`、`vendor/`、`contracts/`、`supply-chain/`、clippy/rustfmt/deny 配置、`rust-toolchain`、`rust-toolchain.toml`、`unsafe-crates.txt`、删除仓库根 `Cargo.toml`，以及用 TOML 解析器比较的 `lints`、`workspace.lints`、`patch`、`replace`。`build.rs` 不在默认列表里；要保护它就传一整份新的路径列表。
 
 豁免只在 `github.repository` 和 `job.workflow_repository` 都是 `burncloud/ci` 时生效。把工作流复制到别的仓库再用相对路径引用，不会再被当成源仓库。fork 上的 `github.repository` 仍是 base 仓库；如果 workflow 也来自 `burncloud/ci`，这次豁免仍会生效。跨仓库的真实行为在打不可变 tag 之前还要用一个外部 crate 仓库核对。
 
@@ -110,7 +110,7 @@ jobs:
 
 ## 本仓库自测
 
-[`tests/fixture`](tests/fixture) 带 proptest、`fuzz/` 和 `supply-chain/`。[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 用 `run-proptest`、`run-fuzz`、`run-mutants` 都为 true 调用汇总工作流，并把 semver 基线钉在已经包含该 crate 的 `19c15f8ba75d81dcc51c89af43b51a386b76f2f3`。`rust.yml` 自己的 `pull_request` 触发会再跑一遍默认开关。
+[`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`rust.yml` 在 `burncloud/ci` 的 pull request 上直接运行：工作目录回退到 `tests/fixture`，并打开 proptest、fuzz、mutants，semver 基线钉在 `19c15f8ba75d81dcc51c89af43b51a386b76f2f3`。`ci.yml` 只跑 actionlint、shellcheck 和脚本反例，不再第二次调用 `rust.yml`，避免同一 PR 跑两套完整检查。其他仓库没有根 `Cargo.toml` 时不会回退到 `tests/fixture`。
 
 ## 本地复现
 
@@ -118,8 +118,7 @@ jobs:
 
 ```bash
 cargo fmt --all --check
-cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic
-cargo clippy --locked --workspace --all-targets --all-features -- -D clippy::allow_attributes_without_reason
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -D clippy::allow_attributes_without_reason
 bash scripts/check-unsafe.sh tests/fixture
 cargo test --locked --workspace --all-targets --all-features
 cargo test --locked --workspace --doc

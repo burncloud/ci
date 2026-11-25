@@ -14,7 +14,8 @@ rustfmt.toml
 deny.toml
 rust-toolchain
 rust-toolchain.toml
-unsafe-allow.txt
+unsafe-crates.txt
+Cargo.toml@removed
 Cargo.toml[lints]
 EOF
 }
@@ -79,16 +80,34 @@ grep -Ev '^[[:space:]]*(#|$)' "$tmp/paths" >"$tmp/patterns" || true
 
 extract_lints() {
   local file=$1
-  if [[ ! -s "$file" ]]; then
-    return 0
-  fi
-  # [lints*]、[workspace.lints*]、[patch*]、[replace] 都算受保护表。
-  awk '
-    /^\[/ {
-      capture = ($0 ~ /^\[(lints|patch)(\.|])/ || $0 ~ /^\[replace\]/ || $0 ~ /^\[workspace\.lints(\.|])/)
-    }
-    capture { print }
-  ' "$file" | sed -e 's/[[:space:]]*$//' -e '/^$/d'
+  python3 - "$file" <<'PY'
+import json
+import sys
+import tomllib
+from pathlib import Path
+
+path = Path(sys.argv[1])
+raw = path.read_bytes() if path.is_file() else b""
+if not raw.strip():
+    doc = {}
+else:
+    try:
+        doc = tomllib.loads(raw.decode())
+    except Exception as exc:
+        print(f"protected: 无法解析 {path}: {exc}", file=sys.stderr)
+        sys.exit(2)
+workspace = doc.get("workspace")
+workspace_lints = None
+if isinstance(workspace, dict):
+    workspace_lints = workspace.get("lints")
+picked = {
+    "lints": doc.get("lints"),
+    "workspace.lints": workspace_lints,
+    "patch": doc.get("patch"),
+    "replace": doc.get("replace"),
+}
+print(json.dumps(picked, sort_keys=True, separators=(",", ":")))
+PY
 }
 
 check_lints=0
@@ -97,12 +116,22 @@ if grep -Fxq 'Cargo.toml[lints]' "$tmp/patterns"; then
 fi
 
 hits=0
-while IFS= read -r path || [[ -n "$path" ]]; do
-  [[ -z "$path" ]] && continue
+while IFS= read -r raw || [[ -n "$raw" ]]; do
+  [[ -z "$raw" ]] && continue
+  status=""
+  path=$raw
+  if [[ "$raw" == *$'\t'* ]]; then
+    status=${raw%%$'\t'*}
+    path=${raw#*$'\t'}
+  fi
   while IFS= read -r pattern || [[ -n "$pattern" ]]; do
     [[ -z "$pattern" || "$pattern" == "Cargo.toml[lints]" ]] && continue
     matched=0
-    if [[ "$pattern" == */ ]]; then
+    if [[ "$pattern" == "Cargo.toml@removed" ]]; then
+      if [[ "$path" == "Cargo.toml" && "$status" == "removed" ]]; then
+        matched=1
+      fi
+    elif [[ "$pattern" == */ ]]; then
       prefix=${pattern%/}
       if [[ "$path" == "$prefix" || "$path" == "$prefix"/* ]]; then
         matched=1
@@ -130,16 +159,28 @@ if [[ "$check_lints" -eq 1 ]]; then
         hits=1
         continue
       fi
-      extract_lints "$before" >"$tmp/before"
-      extract_lints "$after" >"$tmp/after"
+      if ! extract_lints "$before" >"$tmp/before"; then
+        echo "protected: ${path} 的旧文本无法解析，拒绝放行。" >&2
+        hits=1
+        continue
+      fi
+      if ! extract_lints "$after" >"$tmp/after"; then
+        echo "protected: ${path} 的新文本无法解析，拒绝放行。" >&2
+        hits=1
+        continue
+      fi
       if ! cmp -s "$tmp/before" "$tmp/after"; then
-        echo "protected: ${path} 的 [lints]、[workspace.lints]、[patch] 或 [replace] 发生了变化"
+        echo "protected: ${path} 的 lints、workspace.lints、patch 或 replace 发生了变化"
         hits=1
       fi
     done <"$lints_file"
   fi
 
-  while IFS= read -r path || [[ -n "$path" ]]; do
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    path=$raw
+    if [[ "$raw" == *$'\t'* ]]; then
+      path=${raw#*$'\t'}
+    fi
     base=$(basename "$path")
     if [[ "$base" != "Cargo.toml" ]]; then
       continue

@@ -94,7 +94,7 @@ jobs:
 
       - name: cargo clippy
         working-directory: ${{ inputs.working-directory }}
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -D clippy::allow_attributes_without_reason
 
   unsafe:
     runs-on: ubuntu-24.04
