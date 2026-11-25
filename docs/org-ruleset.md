@@ -10,7 +10,7 @@
 
 这条规则跑的是本仓库的工作流，inputs 用默认值，调用方改不了路径列表。不要再同时让每个 crate 仓库用 `uses` 跑一遍，否则 CI 会跑两遍。调用方文件可以留着给人读，但安全边界是这条规则。
 
-`rust.yml` 作为顶层工作流被触发时，检查名预计是两段：
+`rust.yml` 在 `burncloud/ci` 里作为顶层工作流跑过一次（https://github.com/burncloud/ci/actions/runs/45523156265），检查名是两段。组织规则把同一文件注入到别的 crate 仓库时，名字还没有核对，**打 v1 前待验证**：
 
 - `lint / fmt`
 - `lint / clippy`
@@ -173,7 +173,7 @@ gh api --method POST /orgs/burncloud/rulesets --input burncloud-ci.json
 }
 ```
 
-上面的 `context` 都是待用真实 crate 仓库验证的推断值。
+上面的 `context` 与 `burncloud/ci` 上 `rust.yml` 顶层运行看到的名字一致。同一个 required workflow 进到其他 crate 仓库后的名字，打 v1 前仍待验证。
 
 ### burncloud-ci.json
 
