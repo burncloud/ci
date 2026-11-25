@@ -51,11 +51,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Setup
-        uses: ./.github/actions/setup-rust
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: cargo test
         working-directory: ${{ inputs.working-directory }}
@@ -65,11 +87,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Setup
-        uses: ./.github/actions/setup-rust
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: cargo test --doc
         working-directory: ${{ inputs.working-directory }}
@@ -79,11 +123,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Setup
-        uses: ./.github/actions/setup-rust
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: cargo doc
         working-directory: ${{ inputs.working-directory }}
@@ -95,11 +161,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Setup
-        uses: ./.github/actions/setup-rust
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: Check rust-version
         working-directory: ${{ inputs.working-directory }}
@@ -122,11 +210,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Setup
-        uses: ./.github/actions/setup-rust
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: Check extra targets
         working-directory: ${{ inputs.working-directory }}
@@ -149,11 +259,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Setup
-        uses: ./.github/actions/setup-rust
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: Detect WIT
         id: wit
@@ -211,12 +343,38 @@ jobs:
             echo "proptest: 输入 run-proptest=false，跳过。"
           fi
 
-      - name: Setup
+      - name: Checkout caller
         if: steps.gate.outputs.run == 'true'
-        uses: ./.github/actions/setup-rust
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        if: steps.gate.outputs.run == 'true'
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        if: steps.gate.outputs.run == 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: Run proptest
         if: steps.gate.outputs.run == 'true'
@@ -254,12 +412,38 @@ jobs:
             echo "cargo-fuzz: 输入 run-fuzz=false，跳过。"
           fi
 
-      - name: Setup
+      - name: Checkout caller
         if: steps.gate.outputs.run == 'true'
-        uses: ./.github/actions/setup-rust
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout workflow scripts
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        if: steps.gate.outputs.run == 'true'
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        if: steps.gate.outputs.run == 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: Require fuzz targets
         if: steps.gate.outputs.run == 'true'
@@ -325,13 +509,38 @@ jobs:
             echo "cargo-mutants: 输入 run-mutants=false，跳过。"
           fi
 
-      - name: Setup
+      - name: Checkout caller
         if: steps.gate.outputs.run == 'true'
-        uses: ./.github/actions/setup-rust
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: ${{ inputs.toolchain }}
-          working-directory: ${{ inputs.working-directory }}
-          fetch-depth: "0"
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Checkout workflow scripts
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+      - name: Resolve toolchain
+        if: steps.gate.outputs.run == 'true'
+        id: resolve
+        env:
+          TOOLCHAIN: ${{ inputs.toolchain }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: bash .burncloud-ci/scripts/resolve-toolchain.sh
+      - name: Install toolchain
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.resolve.outputs.toolchain }}
+      - name: Cache cargo
+        if: steps.gate.outputs.run == 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: ${{ inputs.working-directory }}
 
       - name: Require package
         if: steps.gate.outputs.run == 'true'

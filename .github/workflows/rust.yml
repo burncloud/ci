@@ -60,7 +60,7 @@ concurrency:
 
 jobs:
   resolve:
-    if: github.event_name != 'workflow_call'
+    if: inputs.working-directory == '' || inputs.working-directory == null
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -89,42 +89,42 @@ jobs:
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
     uses: ./.github/workflows/lint.yml
     with:
-      toolchain: ${{ github.event_name == 'workflow_call' && inputs.toolchain || '' }}
-      working-directory: ${{ github.event_name == 'workflow_call' && inputs.working-directory || needs.resolve.outputs.dir }}
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
 
   test:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
     uses: ./.github/workflows/test.yml
     with:
-      toolchain: ${{ github.event_name == 'workflow_call' && inputs.toolchain || '' }}
-      working-directory: ${{ github.event_name == 'workflow_call' && inputs.working-directory || needs.resolve.outputs.dir }}
-      targets: ${{ github.event_name == 'workflow_call' && inputs.targets || '' }}
-      wit-dir: ${{ github.event_name == 'workflow_call' && inputs.wit-dir || 'wit' }}
-      run-proptest: ${{ github.event_name == 'workflow_call' && inputs.run-proptest || false }}
-      run-fuzz: ${{ github.event_name == 'workflow_call' && inputs.run-fuzz || false }}
-      run-mutants: ${{ github.event_name == 'workflow_call' && inputs.run-mutants || false }}
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
+      targets: ${{ inputs.targets }}
+      wit-dir: ${{ inputs.wit-dir || 'wit' }}
+      run-proptest: ${{ inputs.run-proptest == true }}
+      run-fuzz: ${{ inputs.run-fuzz == true }}
+      run-mutants: ${{ inputs.run-mutants == true }}
 
   supply-chain:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
     uses: ./.github/workflows/supply-chain.yml
     with:
-      toolchain: ${{ github.event_name == 'workflow_call' && inputs.toolchain || '' }}
-      working-directory: ${{ github.event_name == 'workflow_call' && inputs.working-directory || needs.resolve.outputs.dir }}
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
 
   api:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
     uses: ./.github/workflows/api.yml
     with:
-      toolchain: ${{ github.event_name == 'workflow_call' && inputs.toolchain || '' }}
-      working-directory: ${{ github.event_name == 'workflow_call' && inputs.working-directory || needs.resolve.outputs.dir }}
-      semver-baseline: ${{ github.event_name == 'workflow_call' && inputs.semver-baseline || 'auto' }}
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
+      semver-baseline: ${{ inputs.semver-baseline || 'auto' }}
 
   protect:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
     uses: ./.github/workflows/protect.yml
     with:
-      protected-paths: ${{ github.event_name == 'workflow_call' && inputs.protected-paths || '' }}
+      protected-paths: ${{ inputs.protected-paths }}

@@ -26,8 +26,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/resolve-toolchain.sh
+
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # 2026-11-15，v1 标签会移动
+        with:
+          toolchain: ${{ steps.toolchain.outputs.toolchain }}
 
       - name: Install linters
         run: |

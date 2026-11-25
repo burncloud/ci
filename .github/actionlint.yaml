@@ -4,6 +4,3 @@ paths:
   .github/workflows/**/*.{yml,yaml}:
     ignore:
       - 'property "workflow_(repository|sha)" is not defined'
-  .github/actions/**/action.yml:
-    ignore:
-      - 'property "workflow_(repository|sha)" is not defined'
