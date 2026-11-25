@@ -141,6 +141,22 @@ jobs:
             echo "预期非 burncloud 组织的 git 来源不被信任。" >&2
             exit 1
           fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/../evil/x.git'; then
+            echo "预期带 ../ 的 git 来源不被信任。" >&2
+            exit 1
+          fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/%2e%2e/evil/x.git'; then
+            echo "预期带百分号编码的 git 来源不被信任。" >&2
+            exit 1
+          fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://burncloud.evil.com/burncloud/foo.git'; then
+            echo "预期非 github.com 主机不被信任。" >&2
+            exit 1
+          fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud-evil/foo.git'; then
+            echo "预期 owner 不是 burncloud 的 git 来源不被信任。" >&2
+            exit 1
+          fi
           bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/foo.git?tag=v1#abc'
 
           scan=$(bash scripts/scan-capabilities.sh tests/fixture)
@@ -166,4 +182,22 @@ jobs:
             echo "预期使用 DEFAULT_DENY，实际是 ${found}" >&2
             exit 1
           fi
+
+  rust:
+    uses: ./.github/workflows/rust.yml
+    with:
+      working-directory: tests/fixture
+      run-proptest: true
+      run-fuzz: true
+      run-mutants: true
+      semver-baseline: 9236264ec7b8a7b22c622fd0d0ad69c495b15348
+
+  caller:
+    uses: ./.github/workflows/rust.yml
+    with:
+      working-directory: tests/fixture
+      targets: wasm32-wasip2
+      run-proptest: false
+      run-fuzz: false
+      run-mutants: false
 

@@ -19,6 +19,11 @@ concurrency:
 jobs:
   rust:
     uses: burncloud/ci/.github/workflows/rust.yml@<不可变 tag 或 SHA>
+    with:
+      targets: wasm32-wasip2
+      run-proptest: false
+      run-fuzz: false
+      run-mutants: false
 ```
 
 仓库根要提交 `rust-toolchain.toml`，不要依赖浮动的 `stable`。工作流先读这个文件（仓库根优先，其次是 `working-directory`），没有才用 `toolchain` 输入。文件本身在默认受保护路径里。
@@ -62,7 +67,7 @@ jobs:
 | `doc-test` | `cargo test --locked --workspace --doc` |
 | `cargo-doc` | `RUSTDOCFLAGS=-D warnings cargo doc --locked --workspace --no-deps --all-features` |
 | `msrv` | 按每个 crate 的 `rust-version` 跑 `cargo check --locked`。都没写就跳过并说明。 |
-| `extra-targets` | `targets` 输入为空则跳过。插件仓库可传 `wasm32-wasip2`。 |
+| `extra-targets` | `targets` 输入为空则跳过。插件仓库可传 `wasm32-wasip2`。只检查库和二进制，不编译测试。 |
 | `wit` | 没有 `wit/`（或 `wit-dir`）就跳过。有目录则对整个目录跑一次 `wasm-tools component wit`。若有基线提交，再用 `git diff` 报告接口差异；没有成熟的 WIT 兼容性工具，差异不因此失败。 |
 | `proptest` | 默认关。打开后没有 `proptest` 依赖则失败；有则 `PROPTEST_CASES=256`。 |
 | `fuzz` | 默认关。打开后没有 `fuzz/Cargo.toml` 或 target 则失败。有则用 `nightly-2026-11-20` 构建并每个目标最多跑 15 秒。`cargo-fuzz` 0.13.2 的 build 子命令没有 `--locked`，所以先 `cargo metadata --locked`。Linux 预编译包是 musl，构建时显式指定 `x86_64-unknown-linux-gnu`，否则会去编 musl 目标。 |
@@ -82,7 +87,7 @@ jobs:
 
 - 已有 `supply-chain/config.toml`：`cargo vet --locked` 用调用方的策略。
 - 没有目录，也没有第三方依赖：临时空策略，真跑 `cargo vet`。
-- 没有目录，但第三方依赖的 source 全部以 `git+https://github.com/burncloud/` 开头：按统一策略写入 `safe-to-deploy` 和 `safe-to-run` 豁免后再跑。crates.io 上同名的 `burncloud-*` 包不会被信任。
+- 没有目录，但每个第三方依赖都是 `git+https://github.com/burncloud/<仓库>`，仓库名只有一段且不是 `.` 或 `..`，后面只允许 `.git`、`?rev=` / `?tag=` 和 `#` 十六进制 sha：按统一策略写入豁免后再跑。`../`、百分号编码、别的主机或 `burncloud-evil` 这种 owner 都不会被信任。crates.io 上的同名包也不会。
 - 还有其他第三方 crate：失败。请 `cargo vet init` 并提交 `supply-chain/`，或 `cargo vet import mozilla` 后再 certify。
 
 ### 4. 接口与能力 `api.yml`
@@ -110,7 +115,7 @@ jobs:
 
 ## 本仓库自测
 
-[`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`rust.yml` 在 `burncloud/ci` 的 pull request 上直接运行：工作目录回退到 `tests/fixture`，并打开 proptest、fuzz、mutants，semver 基线钉在 `19c15f8ba75d81dcc51c89af43b51a386b76f2f3`。`ci.yml` 只跑 actionlint、shellcheck 和脚本反例，不再第二次调用 `rust.yml`，避免同一 PR 跑两套完整检查。其他仓库没有根 `Cargo.toml` 时不会回退到 `tests/fixture`。
+[`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`ci.yml` 用 `uses` 加 `with` 调用 `rust.yml` 两次：一次打开 proptest、fuzz、mutants，并把 semver 基线设为 `9236264ec7b8a7b22c622fd0d0ad69c495b15348`；一次把 `targets` 设为 `wasm32-wasip2`、三个开关关闭。`rust.yml` 自己的 `pull_request` 触发仍会再跑一遍默认输入。只有 `burncloud/ci` 在没有根 `Cargo.toml` 时会回退到 `tests/fixture`。
 
 ## 本地复现
 
