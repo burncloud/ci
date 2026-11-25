@@ -1,0 +1,6 @@
+# 这两个账号是占位，真实账号等用户给。
+# 占位账号会被 GitHub 静默跳过，Code Owner 审批现在还不生效。
+# 换成有写权限的真实账号后，执行：
+#   gh api repos/burncloud/ci/codeowners/errors
+# 返回的 errors 为空才算配好。
+* @REPLACE-WITH-OWNER @REPLACE-WITH-REVIEWER

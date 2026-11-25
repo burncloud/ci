@@ -95,7 +95,21 @@ def check_branch(data, contexts):
         fail(f"{data['name']}: 不要把会跳过的 resolve 放进必需检查")
 
 
+def check_codeowners():
+    path = ROOT / ".github" / "CODEOWNERS"
+    if not path.is_file():
+        fail("缺少 .github/CODEOWNERS")
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.split()[0] == "*":
+            return
+    fail(".github/CODEOWNERS 必须有覆盖 * 的规则")
+
+
 def main():
+    check_codeowners()
     check_branch(load("crate-main.json"), CRATE_CONTEXTS)
     check_branch(load("ci-main.json"), CI_CONTEXTS)
 

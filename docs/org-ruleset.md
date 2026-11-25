@@ -46,6 +46,8 @@ jq '.enforcement = "active"' docs/rulesets/crate-main.json | gh api -X PUT repos
 
 本仓库的 main 用 [docs/rulesets/ci-main.json](rulesets/ci-main.json)。规则和 `crate-main` 相同：pull request、1 个批准、Code Owner、新提交使旧批准失效、last push approval、review 线程必须解决、禁止强推、禁止删除分支。bypass 同样是仓库管理员的 `pull_request` 模式，原因相同。`enforcement` 是 `disabled`。
 
+`.github/CODEOWNERS` 里的 `@REPLACE-WITH-OWNER` 和 `@REPLACE-WITH-REVIEWER` 是占位。GitHub 会静默跳过不存在的账号，所以 Code Owner 审批现在还不生效。换成有写权限的真实账号后，`gh api repos/burncloud/ci/codeowners/errors` 返回的 `errors` 为空才算配好。
+
 必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
 
 标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此拆成两份：
@@ -64,6 +66,34 @@ jq '.enforcement = "active"' docs/rulesets/ci-main.json | gh api -X PUT repos/bu
 ```
 
 读回每一份，核对之后再把对应文件的 `enforcement` 改成 `active` 做 PUT。不要把改成 `active` 的 JSON 提交回仓库。
+
+`ci-tags` 没有 bypass。规则集处于 `active` 时，谁都不能移动或删除 `v*` 标签。打错标签时，由组织 owner 临时关掉这份规则集，处理完立刻恢复。GitHub 会在组织审计日志里留下这次 ruleset 更新。已经被下游用来钉住的 `vX.Y.Z` 不要移动，应该发一个新的补丁版本。只有确认还没有人钉住这个标签时，才删除或在正确提交上重建。
+
+组织 owner 先把 `ci-tags` 临时改成 `disabled`：
+
+```bash
+id=$(gh api repos/burncloud/ci/rulesets --jq '.[] | select(.name=="ci-tags") | .id')
+jq '.enforcement = "disabled"' docs/rulesets/ci-tags.json | gh api -X PUT "repos/burncloud/ci/rulesets/${id}" --input -
+```
+
+确认还没有下游钉住这个标签时，删掉它，或者删掉后在正确提交上重建。已经钉住的不要执行这两段，改发下一个补丁版本。
+
+```bash
+gh api -X DELETE "repos/burncloud/ci/git/refs/tags/vX.Y.Z"
+```
+
+```bash
+gh api -X DELETE "repos/burncloud/ci/git/refs/tags/vX.Y.Z"
+gh api -X POST repos/burncloud/ci/git/refs -f ref="refs/tags/vX.Y.Z" -f sha="<40 位正确提交>"
+```
+
+处理完立刻恢复 `active` 并读回。确认 `enforcement` 是 `active`，并且 `bypass_actors` 仍是空的：
+
+```bash
+id=$(gh api repos/burncloud/ci/rulesets --jq '.[] | select(.name=="ci-tags") | .id')
+jq '.enforcement = "active"' docs/rulesets/ci-tags.json | gh api -X PUT "repos/burncloud/ci/rulesets/${id}" --input -
+gh api "repos/burncloud/ci/rulesets/${id}" --jq '{id, name, enforcement, bypass_actors, rules}'
+```
 
 ## 升级到 Team 之后：组织级 required workflow
 
