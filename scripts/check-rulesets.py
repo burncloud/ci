@@ -44,6 +44,13 @@ ADMIN_ALWAYS = {
     "actor_type": "RepositoryRole",
     "bypass_mode": "always",
 }
+CURSOR_APP_ID = 1210556
+CURSOR_APP_ALWAYS = {
+    "actor_id": CURSOR_APP_ID,
+    "actor_type": "Integration",
+    "bypass_mode": "always",
+}
+TAG_WRITER_BYPASS = [ADMIN_ALWAYS, CURSOR_APP_ALWAYS]
 
 
 def fail(message):
@@ -207,8 +214,8 @@ def create_problem(data):
     scope = vstar_scope_problem(data)
     if scope:
         return scope
-    if data.get("bypass_actors") != [ADMIN_ALWAYS]:
-        return "只有仓库管理员可以 always bypass"
+    if data.get("bypass_actors") != TAG_WRITER_BYPASS:
+        return "bypass 必须恰好是仓库管理员和 Cursor app 的 always"
     if rule_types(data) != ["creation"]:
         return "只能有 creation"
     return None
@@ -255,8 +262,8 @@ def latest_move_problem(data):
     scope = latest_scope_problem(data)
     if scope:
         return scope
-    if data.get("bypass_actors") != [ADMIN_ALWAYS]:
-        return "bypass 必须是仓库管理员 always"
+    if data.get("bypass_actors") != TAG_WRITER_BYPASS:
+        return "bypass 必须恰好是仓库管理员和 Cursor app 的 always"
     if rule_types(data) != ["update", "non_fast_forward", "creation"]:
         return "规则必须是 update、non_fast_forward、creation"
     if any(item.get("type") == "deletion" for item in data["rules"]):
@@ -316,6 +323,40 @@ def self_test_tags():
     stuck["rules"] = [item for item in stuck["rules"] if item["type"] != "creation"]
     if latest_move_problem(stuck) is None:
         fail("ci-tags-latest-move 自测：缺少 creation 应当失败")
+    admin_only = copied(create)
+    admin_only["bypass_actors"] = [ADMIN_ALWAYS]
+    if create_problem(admin_only) is None:
+        fail("ci-tags-create 自测：缺少 Integration 应当失败")
+    wrong_id = copied(move)
+    wrong_id["bypass_actors"] = [
+        ADMIN_ALWAYS,
+        {
+            "actor_id": CURSOR_APP_ID + 1,
+            "actor_type": "Integration",
+            "bypass_mode": "always",
+        },
+    ]
+    if latest_move_problem(wrong_id) is None:
+        fail("ci-tags-latest-move 自测：Integration id 错误应当失败")
+    pull_mode = copied(create)
+    pull_mode["bypass_actors"] = [
+        ADMIN_ALWAYS,
+        {
+            "actor_id": CURSOR_APP_ID,
+            "actor_type": "Integration",
+            "bypass_mode": "pull_request",
+        },
+    ]
+    if create_problem(pull_mode) is None:
+        fail("ci-tags-create 自测：Integration 模式不是 always 应当失败")
+    app_on_tags = copied(tags)
+    app_on_tags["bypass_actors"] = [CURSOR_APP_ALWAYS]
+    if keep_problem(app_on_tags) is None:
+        fail("ci-tags 自测：出现 Integration bypass 应当失败")
+    app_on_delete = copied(delete)
+    app_on_delete["bypass_actors"] = [CURSOR_APP_ALWAYS]
+    if latest_delete_problem(app_on_delete) is None:
+        fail("ci-tags-latest-delete 自测：出现 Integration bypass 应当失败")
 
 
 def main():
