@@ -57,9 +57,11 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此 `v*` 拆成两份，`latest` 再拆成「不能删」和「可以移动」两份。`refs/tags/v*` 是通配，两份 `v*` 规则集都显式 `exclude` `refs/tags/latest`，避免把浮动标签卷进去。
 
 - [docs/rulesets/ci-tags.json](rulesets/ci-tags.json) 匹配 `refs/tags/v*`，并排除 `refs/tags/latest`。规则是 `update`、`deletion`、`non_fast_forward`。`update` 不带 `parameters`：`update_allows_fetch_and_merge` 只对分支有意义，默认就是 false，服务端创建 tag 规则集时会丢掉这个字段，读回是 `{"type":"update"}`。语义不变。`bypass_actors` 为空，仓库管理员也不能移动或删除这些标签。移动标签是 ref 的 `update`，`non_fast_forward` 再挡住非快进更新。
-- [docs/rulesets/ci-tags-create.json](rulesets/ci-tags-create.json) 只匹配 `refs/tags/v*`，并排除 `refs/tags/latest`。只有 `creation`。bypass 是仓库管理员角色（`RepositoryRole`，`actor_id` `5`），`bypass_mode` 为 `always`。creation 的含义是：只有能 bypass 的人可以创建匹配的 tag。线上如果这份 bypass 是 null，谁都建不了 `v*` 标签，要按下面的流程把期望 JSON 应用到现有规则集。
+- [docs/rulesets/ci-tags-create.json](rulesets/ci-tags-create.json) 只匹配 `refs/tags/v*`，并排除 `refs/tags/latest`。只有 `creation`。bypass 恰好两项，都是 `always`：仓库管理员角色（`RepositoryRole`，`actor_id` `5`），以及 Cursor GitHub App（`Integration`，`actor_id` `1210556`，slug `cursor`）。只有这两方可以创建 `v*`。线上如果这份 bypass 缺了 Integration，Cursor app 仍然建不了标签。
 - [docs/rulesets/ci-tags-latest-delete.json](rulesets/ci-tags-latest-delete.json) 只匹配 `refs/tags/latest`，只有 `deletion`，没有 bypass。谁都不能删 `latest`。
-- [docs/rulesets/ci-tags-latest-move.json](rulesets/ci-tags-latest-move.json) 只匹配 `refs/tags/latest`。规则是 `update`、`non_fast_forward`、`creation`。bypass 只有仓库管理员 `always`，所以管理员可以创建并移动 `latest`。deletion 不放在这份里，否则同一个 bypass 会连删除一起放行。
+- [docs/rulesets/ci-tags-latest-move.json](rulesets/ci-tags-latest-move.json) 只匹配 `refs/tags/latest`。规则是 `update`、`non_fast_forward`、`creation`。bypass 和 `ci-tags-create` 相同：仓库管理员和 Cursor app（`1210556`）都是 `always`。他们可以创建并移动 `latest`。deletion 不放在这份里，否则同一个 bypass 会连删除一起放行。
+
+Cursor app 可以创建 `v*`，也可以创建并移动 `latest`。它不能修改或删除已有的 `v*`，也不能删除 `latest`。`ci-tags` 和 `ci-tags-latest-delete` 没有任何 bypass，包括不能给 Integration 开 bypass。
 
 每次合并到 main 之后，先打新的 `vX.Y.Z`。这个标签创建后不能改、不能删。再把 `latest` 移到同一个提交。调用方仓库用 `@latest`。
 

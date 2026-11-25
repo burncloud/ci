@@ -52,6 +52,8 @@ jobs:
 
 每次合并到 main 之后先打新的 `vX.Y.Z`。这个标签创建后不能改、不能删。再把 `latest` 移到同一个提交。调用方跟着 `latest` 前进；要钉死某一次发布就改用那个 `vX.Y.Z` 或提交 SHA。
 
+Cursor GitHub App（app id `1210556`，slug `cursor`，来自 `GET /apps/cursor`）可以创建 `v*`，也可以创建并移动 `latest`。它不能修改或删除已有的 `v*`，也不能删除 `latest`。仓库管理员同样只能创建 `v*` 和移动 `latest`。
+
 规则集变更先保持仓库里的期望 JSON 为 `disabled`。导入或更新线上规则后，先按 `disabled` 读回比对，再把线上改成 `active` 并再比对一次。不要把 `active` 写回仓库。
 
 | 引用 | 结果 |
