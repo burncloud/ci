@@ -9,7 +9,7 @@ on:
         type: string
         default: ""
       working-directory:
-        description: Cargo workspace 根目录，相对仓库根。直接触发时若仓库根没有 Cargo.toml，会改用 tests/fixture。
+        description: Cargo workspace 根目录，相对仓库根。直接触发且仓库根没有 Cargo.toml 时，只有 burncloud/ci 会回退到 tests/fixture。
         required: false
         type: string
         default: "."
@@ -48,14 +48,23 @@ on:
         required: false
         type: string
         default: ""
+      concurrency-key:
+        description: 同一次调用方工作流里多次 workflow_call 时用来区分并发组。直接触发和单次 uses 留空。
+        required: false
+        type: string
+        default: ""
   pull_request:
   merge_group:
 
 permissions:
   contents: read
 
+# 组名同时带工作流名和 concurrency-key。
+# 直接触发时 github.workflow 是 Rust；被 uses 调用时是调用方工作流的名字。
+# required workflow 和单次 uses 都不传 key。组名如果只有 rust-<PR>-，两边会互相取消。
+# 同一次工作流里的两次 workflow_call 看到的 github.workflow 相同，必须传不同的 key。
 concurrency:
-  group: rust-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: rust-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.concurrency-key }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -101,9 +110,9 @@ jobs:
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
       targets: ${{ inputs.targets }}
       wit-dir: ${{ inputs.wit-dir || 'wit' }}
-      run-proptest: ${{ github.repository == 'burncloud/ci' || inputs.run-proptest == true }}
-      run-fuzz: ${{ github.repository == 'burncloud/ci' || inputs.run-fuzz == true }}
-      run-mutants: ${{ github.repository == 'burncloud/ci' || inputs.run-mutants == true }}
+      run-proptest: ${{ inputs.run-proptest == true }}
+      run-fuzz: ${{ inputs.run-fuzz == true }}
+      run-mutants: ${{ inputs.run-mutants == true }}
 
   supply-chain:
     needs: resolve
@@ -120,7 +129,7 @@ jobs:
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
-      semver-baseline: ${{ github.repository == 'burncloud/ci' && '19c15f8ba75d81dcc51c89af43b51a386b76f2f3' || inputs.semver-baseline || 'auto' }}
+      semver-baseline: ${{ inputs.semver-baseline || 'auto' }}
 
   protect:
     needs: resolve

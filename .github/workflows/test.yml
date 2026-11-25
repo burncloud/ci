@@ -250,9 +250,9 @@ jobs:
           fi
           mapfile -t targets < <(printf '%s\n' "$TARGETS" | tr ', ' '\n' | sed '/^$/d')
           for target in "${targets[@]}"; do
-            echo "extra-targets: cargo check --target ${target}"
+            echo "extra-targets: cargo check --target ${target}（不编译测试，避免宿主专用的 dev-dependency）"
             rustup target add "$target"
-            cargo check --locked --workspace --all-targets --all-features --target "$target"
+            cargo check --locked --workspace --all-features --target "$target"
           done
 
   wit:

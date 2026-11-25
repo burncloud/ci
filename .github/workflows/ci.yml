@@ -53,6 +53,34 @@ jobs:
       - name: actionlint
         run: actionlint -shellcheck "$(command -v shellcheck)"
 
+      - name: Check ruleset JSON
+        run: python3 scripts/check-rulesets.py
+
+      - name: Check ruleset readback
+        run: |
+          set -euo pipefail
+          script=scripts/check-ruleset-readback.sh
+          expect_exit() {
+            local want=$1
+            local name=$2
+            shift 2
+            local status=0
+            "$@" >/tmp/ruleset-readback.out 2>/tmp/ruleset-readback.err || status=$?
+            if [[ "$status" -ne "$want" ]]; then
+              echo "FAIL ${name}: 预期 exit ${want}，实际 exit ${status}" >&2
+              cat /tmp/ruleset-readback.err >&2
+              exit 1
+            fi
+            echo "PASS ${name} exit ${status}"
+          }
+          submitted=docs/rulesets/crate-main.json
+          expect_exit 0 crate-ok bash "$script" "$submitted" tests/ruleset-readback/crate-main/ok.json
+          for name in extra-bypass bypass-mode-always exclude-default-branch include-changed check-name-longer missing-check extra-check integration-id-changed missing-deletion code-owner-false approval-count-zero enforcement-mismatch; do
+            expect_exit 1 "$name" bash "$script" "$submitted" "tests/ruleset-readback/crate-main/${name}.json"
+          done
+          expect_exit 0 ci-tags-ok bash "$script" docs/rulesets/ci-tags.json tests/ruleset-readback/ci-tags/ok.json
+          expect_exit 1 ci-tags-extra-bypass bash "$script" docs/rulesets/ci-tags.json tests/ruleset-readback/ci-tags/extra-bypass.json
+
       - name: Check scripts
         run: |
           set -euo pipefail
@@ -141,6 +169,22 @@ jobs:
             echo "预期非 burncloud 组织的 git 来源不被信任。" >&2
             exit 1
           fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/../evil/x.git'; then
+            echo "预期带 ../ 的 git 来源不被信任。" >&2
+            exit 1
+          fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/%2e%2e/evil/x.git'; then
+            echo "预期带百分号编码的 git 来源不被信任。" >&2
+            exit 1
+          fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://burncloud.evil.com/burncloud/foo.git'; then
+            echo "预期非 github.com 主机不被信任。" >&2
+            exit 1
+          fi
+          if bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud-evil/foo.git'; then
+            echo "预期 owner 不是 burncloud 的 git 来源不被信任。" >&2
+            exit 1
+          fi
           bash scripts/run-cargo-vet.sh --classify-source 'git+https://github.com/burncloud/foo.git?tag=v1#abc'
 
           scan=$(bash scripts/scan-capabilities.sh tests/fixture)
@@ -166,4 +210,27 @@ jobs:
             echo "预期使用 DEFAULT_DENY，实际是 ${found}" >&2
             exit 1
           fi
+
+  # 两次调用的 github.workflow 都是本工作流的名字 CI。
+  # key 必须不同，组名才分别是 rust-CI-<PR>-self-test 和 rust-CI-<PR>-caller-with，
+  # 否则后一次会取消整次运行。
+  rust:
+    uses: ./.github/workflows/rust.yml
+    with:
+      working-directory: tests/fixture
+      run-proptest: true
+      run-fuzz: true
+      run-mutants: true
+      semver-baseline: 9236264ec7b8a7b22c622fd0d0ad69c495b15348
+      concurrency-key: self-test
+
+  caller:
+    uses: ./.github/workflows/rust.yml
+    with:
+      working-directory: tests/fixture
+      targets: wasm32-wasip2
+      run-proptest: false
+      run-fuzz: false
+      run-mutants: false
+      concurrency-key: caller-with
 
