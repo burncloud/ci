@@ -147,8 +147,8 @@ def main():
     if tags["conditions"]["ref_name"]["include"] != ["refs/tags/v*"]:
         fail("ci-tags: ref 必须是 refs/tags/v*")
     update = rule(tags, "update")
-    if update.get("parameters") != {"update_allows_fetch_and_merge": False}:
-        fail("ci-tags: update 必须带 update_allows_fetch_and_merge=false")
+    if "parameters" in update:
+        fail("ci-tags: tag 的 update 规则不要带 parameters，服务端会丢掉")
     rule(tags, "deletion")
     rule(tags, "non_fast_forward")
     if any(item.get("type") == "creation" for item in tags["rules"]):
