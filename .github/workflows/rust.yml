@@ -48,14 +48,21 @@ on:
         required: false
         type: string
         default: ""
+      concurrency-key:
+        description: 同一次调用里多次 workflow_call 时用来区分并发组。直接触发留空。
+        required: false
+        type: string
+        default: ""
   pull_request:
   merge_group:
 
 permissions:
   contents: read
 
+# 被调用时 github.workflow 是调用方的名字。两次 workflow_call 如果共用这一组，
+# 后一次会把整次调用方运行取消掉。所以组名固定用 rust-，再用 concurrency-key 分开。
 concurrency:
-  group: rust-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: rust-${{ github.event.pull_request.number || github.ref }}-${{ inputs.concurrency-key }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

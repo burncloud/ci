@@ -191,6 +191,7 @@ jobs:
       run-fuzz: true
       run-mutants: true
       semver-baseline: 9236264ec7b8a7b22c622fd0d0ad69c495b15348
+      concurrency-key: self-test
 
   caller:
     uses: ./.github/workflows/rust.yml
@@ -200,4 +201,5 @@ jobs:
       run-proptest: false
       run-fuzz: false
       run-mutants: false
+      concurrency-key: caller-with
 

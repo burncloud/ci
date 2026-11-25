@@ -28,7 +28,7 @@ jobs:
 
 仓库根要提交 `rust-toolchain.toml`，不要依赖浮动的 `stable`。工作流先读这个文件（仓库根优先，其次是 `working-directory`），没有才用 `toolchain` 输入。文件本身在默认受保护路径里。
 
-`working-directory` 默认是仓库根。一个仓库里有多个 crate 时，不要共用一个叫 `rust` 的 job，见 [docs/org-ruleset.md](docs/org-ruleset.md)。
+`working-directory` 默认是仓库根。一个仓库里有多个 crate 时，不要共用一个叫 `rust` 的 job，见 [docs/org-ruleset.md](docs/org-ruleset.md)。同一次工作流里如果调用两次 `rust.yml`，每次要传不同的 `concurrency-key`。被调用时 `github.workflow` 是调用方的名字，两次调用共用并发组会把整次运行取消掉。直接由 `pull_request` 触发时留空，同一 PR 的新提交仍会取消旧运行。
 
 ## 版本怎么固定
 
