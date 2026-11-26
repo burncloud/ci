@@ -242,6 +242,19 @@ jobs:
 
           bash scripts/test-semver-checks.sh
 
+          bash scripts/check-reusable-uses.sh .github/workflows
+          bash scripts/check-reusable-uses.sh tests/reusable-uses/same-repo
+          bash scripts/check-reusable-uses.sh tests/reusable-uses/caller
+          if bash scripts/check-reusable-uses.sh tests/reusable-uses/relative; then
+            echo "可复用工作流里的 ./ uses 应当失败。" >&2
+            exit 1
+          fi
+          if bash scripts/check-reusable-uses.sh tests/reusable-uses/quoted; then
+            echo "引号里的 ./ uses 应当失败。" >&2
+            exit 1
+          fi
+          echo "PASS reusable uses"
+
       - name: Check clippy and comments
         run: |
           set -euo pipefail

@@ -1,0 +1,5 @@
+on:
+  push:
+jobs:
+  rust:
+    uses: ./.github/workflows/rust.yml
