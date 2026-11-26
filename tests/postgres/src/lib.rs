@@ -11,12 +11,16 @@ mod database {
     #[test]
     fn database_url_reaches_postgres() -> Result<(), Box<dyn Error>> {
         let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL")?;
+        let url = url.strip_prefix("postgres://").ok_or("DATABASE_URL")?;
         let (userinfo, rest) = url.split_once('@').ok_or("DATABASE_URL")?;
         let (hostport, db) = rest.split_once('/').ok_or("DATABASE_URL")?;
-        let (ip, port_text) = hostport.split_once(':').ok_or("DATABASE_URL")?;
-        let user = userinfo.split(':').next().ok_or("DATABASE_URL")?;
+        let (host, port_text) = hostport.split_once(':').ok_or("DATABASE_URL")?;
+        let user = userinfo.split_once(':').map_or(userinfo, |(u, _)| u);
         let port = port_text.parse::<u16>()?;
-        let addr = (ip, port).to_socket_addrs()?.next().ok_or("DATABASE_URL")?;
+        let addr = (host, port)
+            .to_socket_addrs()?
+            .next()
+            .ok_or("DATABASE_URL")?;
         let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(10))?;
         stream.set_read_timeout(Some(Duration::from_secs(10)))?;
         let mut body = 196_608_i32.to_be_bytes().to_vec();
