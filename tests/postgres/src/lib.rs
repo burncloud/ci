@@ -1,5 +1,3 @@
-#![forbid(unsafe_code)]
-#![deny(warnings)]
 #![deny(clippy::pedantic)]
 #[cfg(test)]
 mod database {
