@@ -50,7 +50,7 @@ jobs:
 
 调用方 `uses` 用 `@latest`。也可以钉 40 位完整 SHA，或不可移动的 `vX.Y.Z`。禁止 `v1` 这类别的浮动标签，也禁止分支名。`latest` 只接受这一个小写名字。SHA 接受大小写十六进制，`v` 只小写。检查在 [`scripts/check-pinned-ref.sh`](scripts/check-pinned-ref.sh)。
 
-每次合并到 main 之后先打新的 `vX.Y.Z`。这个标签创建后不能改、不能删。再把 `latest` 移到同一个提交。调用方跟着 `latest` 前进；要钉死某一次发布就改用那个 `vX.Y.Z` 或提交 SHA。
+只给 `release-ready` 为绿的 main 提交打 `vX.Y.Z`。这个标签创建后不能改、不能删。然后再把 `latest` 移到同一个提交。调用方跟着 `latest` 前进；要钉死某一次发布就改用那个 `vX.Y.Z` 或提交 SHA。
 
 Cursor GitHub App（app id `1210556`，slug `cursor`，来自 `GET /apps/cursor`）可以创建 `v*`，也可以创建并移动 `latest`。它不能修改或删除已有的 `v*`，也不能删除 `latest`。仓库管理员同样只能创建 `v*` 和移动 `latest`。
 
@@ -69,7 +69,16 @@ Cursor GitHub App（app id `1210556`，slug `cursor`，来自 `GET /apps/cursor`
 
 脚本和默认 `deny.toml` 用 `actions/checkout` 取工作流定义仓库的 `job.workflow_sha`，放到 `.burncloud-ci`，不再从 `raw.githubusercontent.com` 下载。
 
-可复用工作流里再调用本仓库的工作流时用 `$/.github/workflows/...`。它落在写出这个 `uses` 的文件所在仓库、以及该文件这次被加载的同一次提交上。`./` 会按最外层调用方仓库解析：pull request 上现在还能找到 `burncloud/ci` 里的文件，push 到调用方的 `main` 时会在解析阶段报 workflow was not found，一个 job 都不会启动。
+可复用工作流里再调用本仓库的工作流，写成 `burncloud/ci/.github/workflows/<file>.yml@<40 位小写 sha>`。`./` 和 `$/` 在别的仓库 push 到 main 时都按调用方仓库解析，解析阶段就失败。v1.2.2 的 `$/` 已经在 billing 的 push 上这样失败过。
+
+PR 上的自检只查格式：五处 `uses` 都是这个形式，五个 sha 相同，是 40 位小写十六进制，并且是 `origin/main` 的祖先。不比较文件内容。
+
+`release-ready` 只在 push 到 main 时跑 `bash scripts/check-nested-workflow-pin.sh --release`。它不在必需检查里。这一模式在格式检查之外，比较钉住的 sha 和当前 HEAD 的整棵树，只排除 `.github/workflows/rust.yml` 和 `.github/workflows/ci.yml`。嵌套 job 用 `job.workflow_sha` 取 `scripts/`、`deny.toml` 和其他文件，所以这些也要和钉住的 sha 一致。
+
+改 `lint.yml`、`test.yml`、`supply-chain.yml`、`api.yml`、`protect.yml`，以及 `scripts/`、`deny.toml` 这些被 checkout 的文件，分两个 PR。不能在同一个 PR 里把 sha 拨到「这个 PR 里改这些文件的那个提交」：合并是 squash，合并提交的 sha 要到合并之后才存在，PR 里的中间提交也不会留在 main 的历史上，拨过去之后它不是 `origin/main` 的祖先。
+
+1. 只改这些文件，不要改 `rust.yml` 里的 sha。sha 仍是当时 `origin/main` 上的旧提交，格式检查通过，这一 PR 可以全绿。合并后的 squash 提交记为 S。main 上的 `release-ready` 会红，表示当前不能发版。这一步的 PR 里，`rust.yml` 调用的还是钉住的旧嵌套文件。新改的嵌套文件和脚本不会在这一步经过 `rust.yml` 跑一遍。
+2. 从包含 S 的 main 再开一个 PR，只把 `rust.yml` 五处 sha 改成 S。S 已经在 `origin/main` 上。这一步 `ci.yml` 的 `rust` 和 `caller` 会用新 sha，新改动第一次真正运行。这一 PR 必须全绿才能发版。squash 合并后 `release-ready` 恢复绿色。只给这个绿色的 main 提交打 `vX.Y.Z`，再移动 `latest`。
 
 ## 五层
 
@@ -183,6 +192,10 @@ bash scripts/run-cargo-vet.sh tests/fixture
 bash scripts/scan-capabilities.sh tests/fixture
 bash scripts/test-semver-checks.sh
 bash scripts/check-reusable-uses.sh .github/workflows
+bash scripts/check-nested-workflow-pin.sh
+bash scripts/check-nested-workflow-pin.sh --release
+bash scripts/test-reusable-uses.sh
+bash scripts/test-nested-workflow-pin.sh
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py

@@ -19,9 +19,16 @@ if [[ ${#files[@]} -eq 0 ]]; then
   exit 1
 fi
 
+is_reusable() {
+  local file=$1
+  grep -Eq '(^|[^[:alnum:]_])workflow_call([^[:alnum:]_]|$)' "$file"
+}
+
+pinned_re='^burncloud/ci/\.github/workflows/[^/]+\.yml@[0-9a-f]{40}$'
+
 fail=0
 for file in "${files[@]}"; do
-  if ! grep -Eq '^[[:space:]]*workflow_call:[[:space:]]*$' "$file"; then
+  if ! is_reusable "$file"; then
     continue
   fi
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -35,8 +42,13 @@ for file in "${files[@]}"; do
     if [[ ${#value} -ge 2 && ( "$value" == \"*\" || "$value" == \'*\' ) ]]; then
       value="${value:1:${#value}-2}"
     fi
-    if [[ "$value" == ./* ]]; then
-      echo "reusable-uses: ${file} 可复用工作流不能使用 ${value}" >&2
+    if [[ "$value" == ./* || "$value" == \$/* ]]; then
+      echo "reusable-uses: ${file} 不能使用 ${value}" >&2
+      fail=1
+      continue
+    fi
+    if [[ "$value" == burncloud/ci/.github/workflows/* && ! "$value" =~ $pinned_re ]]; then
+      echo "reusable-uses: ${file} 调用本仓库工作流必须钉 40 位小写 sha: ${value}" >&2
       fail=1
     fi
   done <"$file"

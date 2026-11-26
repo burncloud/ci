@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Read rust-toolchain.toml
         id: toolchain
@@ -243,17 +244,9 @@ jobs:
           bash scripts/test-semver-checks.sh
 
           bash scripts/check-reusable-uses.sh .github/workflows
-          bash scripts/check-reusable-uses.sh tests/reusable-uses/same-repo
-          bash scripts/check-reusable-uses.sh tests/reusable-uses/caller
-          if bash scripts/check-reusable-uses.sh tests/reusable-uses/relative; then
-            echo "可复用工作流里的 ./ uses 应当失败。" >&2
-            exit 1
-          fi
-          if bash scripts/check-reusable-uses.sh tests/reusable-uses/quoted; then
-            echo "引号里的 ./ uses 应当失败。" >&2
-            exit 1
-          fi
-          echo "PASS reusable uses"
+          bash scripts/check-nested-workflow-pin.sh
+          bash scripts/test-reusable-uses.sh
+          bash scripts/test-nested-workflow-pin.sh
 
       - name: Check clippy and comments
         run: |
@@ -659,4 +652,18 @@ jobs:
       run-fuzz: false
       run-mutants: false
       concurrency-key: caller-with
+
+  release-ready:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check release pin
+        run: bash scripts/check-nested-workflow-pin.sh --release
 

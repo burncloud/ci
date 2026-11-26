@@ -1,0 +1,4 @@
+on: [workflow_call]
+jobs:
+  protect:
+    uses: ./.github/workflows/protect.yml
