@@ -140,7 +140,7 @@ Cursor GitHub App（app id `1210556`，slug `cursor`，来自 `GET /apps/cursor`
 
 | job | 做什么 |
 | --- | --- |
-| `semver` | `cargo semver-checks --baseline-rev`。`auto` 在 pull request 上用 base sha，否则用最新 tag。基线上没有该清单时视为新 crate，说明后跳过。 |
+| `semver` | `cargo semver-checks --baseline-rev`。`auto` 在 pull request 上用 base sha，否则用最新 tag。基线上没有该清单时视为新 crate，说明后跳过。库包名单用基线和当前的 `cargo metadata`，不解析 semver-checks 的报错，也不按 `publish` 排除。两边都有的用 `--package` 逐个对比。只在当前有的输出「新增包，无基线」并跳过。基线有、当前没有的算破坏性改动，直接失败。 |
 | `capabilities` | 只打印能力报告，不阻断。非测试代码里没有 `reason` 的 `#[allow]` 由 lint 层的 clippy 拒绝。 |
 
 能力路线图：
@@ -179,6 +179,7 @@ cargo deny --config deny.toml --manifest-path tests/fixture/Cargo.toml check
 cargo audit
 bash scripts/run-cargo-vet.sh tests/fixture
 bash scripts/scan-capabilities.sh tests/fixture
+bash scripts/test-semver-checks.sh
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py

@@ -240,6 +240,8 @@ jobs:
           reject_ref 0123456789abcdef0123456789abcdef012345678
           reject_ref 0123456789abcdef0123456789abcdef0123456g
 
+          bash scripts/test-semver-checks.sh
+
       - name: Check clippy and comments
         run: |
           set -euo pipefail
