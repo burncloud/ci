@@ -8,6 +8,3 @@ description = "Connects to Postgres when the cargo-test postgres input is enable
 
 [lints.rust]
 unsafe_code = "forbid"
-
-[dev-dependencies]
-postgres = { version = "=0.19.12", default-features = false }

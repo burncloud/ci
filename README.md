@@ -140,9 +140,9 @@ jobs:
       postgres: true
 ```
 
-`rust.yml` 把它传给 `test.yml`。只有 `cargo-test` 在 `postgres` 为 true 时挂 Postgres 16 服务容器。镜像是 `postgres:16@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8`，健康检查命令是 `pg_isready`。这个 job 里的 `DATABASE_URL` 是 `postgres://postgres:postgres@127.0.0.1:5432/postgres`。不开启时不启动该服务，也不设置 `DATABASE_URL`，`cargo-test` 的 job 名仍是 `cargo-test`。
+只有 `test.yml` 的 `cargo-test` 在 `postgres` 为 true 时挂 Postgres 16。镜像按 digest 钉成 `postgres@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8`，健康检查命令是 `pg_isready`。这个 job 里的 `DATABASE_URL` 是 `postgres://postgres:postgres@127.0.0.1:5432/postgres`。为 false 时 `image` 是空字符串，服务不启动，也不设置 `DATABASE_URL`。job 名仍是 `cargo-test`。`services` 不能写 `if`，条件只能放在 `image` 表达式里。
 
-pin 还指着旧的 `test.yml` 时，不能把未知的 `postgres` 输入传进去。所以 `postgres` 不是 true 时仍走原来的 `test` job，不传这个输入；为 true 时改走 `test-postgres`。默认关闭时，真正运行的 job 和以前一样，多出来的 `test-postgres` 被跳过。
+`rust.yml` 的 `test` job 仍钉着旧的 `test.yml`，那个文件没有 `postgres` 输入。GitHub 在启动工作流时就校验 `with` 的键，job 上的 `if` 不会跳过这次校验。把 `postgres` 传给旧文件会让整次运行 `startup_failure`，一个 job 都不会出现。所以这一步不转发该输入。`rust.yml` 上的输入默认 false，别的仓库不传它时，跑的 job 和以前一样。本仓库的 `ci.yml` 用 `./.github/workflows/test.yml` 直接调用新的 `test.yml` 并传 `postgres: true`。第二步把 sha 拨到包含该输入的提交之后，再从 `rust.yml` 转发。
 
 ### 3. 供应链 `supply-chain.yml`
 

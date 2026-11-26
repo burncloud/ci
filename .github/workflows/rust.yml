@@ -108,7 +108,7 @@ jobs:
 
   test:
     needs: resolve
-    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped') && inputs.postgres != true
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
     uses: burncloud/ci/.github/workflows/test.yml@849394bb49bc21281a5ab48b0163bd213caa84ef
     with:
       toolchain: ${{ inputs.toolchain }}
@@ -118,20 +118,6 @@ jobs:
       run-proptest: ${{ inputs.run-proptest == true }}
       run-fuzz: ${{ inputs.run-fuzz == true }}
       run-mutants: ${{ inputs.run-mutants == true }}
-
-  test-postgres:
-    needs: resolve
-    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped') && inputs.postgres == true
-    uses: burncloud/ci/.github/workflows/test.yml@849394bb49bc21281a5ab48b0163bd213caa84ef
-    with:
-      toolchain: ${{ inputs.toolchain }}
-      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
-      targets: ${{ inputs.targets }}
-      wit-dir: ${{ inputs.wit-dir || 'wit' }}
-      run-proptest: ${{ inputs.run-proptest == true }}
-      run-fuzz: ${{ inputs.run-fuzz == true }}
-      run-mutants: ${{ inputs.run-mutants == true }}
-      postgres: true
 
   supply-chain:
     needs: resolve

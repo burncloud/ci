@@ -57,14 +57,14 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: ${{ inputs.postgres == true && 'postgres:16@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8' || '' }}
+        image: ${{ inputs.postgres && 'postgres@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8' || '' }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
-        options: ${{ inputs.postgres == true && '--health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5' || '' }}
+        options: ${{ inputs.postgres && '--health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5' || '' }}
     steps:
       - name: Checkout caller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,7 +98,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           POSTGRES: ${{ inputs.postgres }}
-          DATABASE_URL: ${{ inputs.postgres == true && 'postgres://postgres:postgres@127.0.0.1:5432/postgres' || '' }}
+          DATABASE_URL: ${{ inputs.postgres && 'postgres://postgres:postgres@127.0.0.1:5432/postgres' || '' }}
         run: |
           set -euo pipefail
           if [[ "$POSTGRES" != "true" ]]; then
