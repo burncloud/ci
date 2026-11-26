@@ -124,10 +124,15 @@ done <"$tmp/current.txt"
 removed=0
 while IFS= read -r name || [[ -n "$name" ]]; do
   [[ -z "$name" ]] && continue
-  if ! has_name "$name" "$tmp/current.txt"; then
-    echo "semver: 包 ${name} 在基线存在、当前不存在，算破坏性改动。" >&2
-    removed=1
+  if has_name "$name" "$tmp/current.txt"; then
+    continue
   fi
+  if [[ "$name" == "burncloud-template" ]]; then
+    echo "模板占位包已移除: ${name}"
+    continue
+  fi
+  echo "semver: 包 ${name} 在基线存在、当前不存在，算破坏性改动。" >&2
+  removed=1
 done <"$tmp/baseline.txt"
 
 while IFS= read -r name || [[ -n "$name" ]]; do

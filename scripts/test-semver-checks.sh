@@ -233,3 +233,40 @@ if grep -F -e '--package ' "$log" >/dev/null; then
   fail "FAIL mixed: 没有两边都有的库包，不应调用 --package"
 fi
 printf '%s\n' "PASS mixed exit ${status}"
+
+template=${tmp}/template
+init_repo "$template"
+write_workspace "$template/Cargo.toml" crates/kept crates/burncloud-template
+write_lib "$template/crates/kept" kept
+write_lib "$template/crates/burncloud-template" burncloud-template
+template_base=$(snap "$template" baseline)
+rm -rf "$template/crates/burncloud-template"
+write_workspace "$template/Cargo.toml" crates/kept
+snap "$template" current >/dev/null
+run_at "$template" "$template_base" ""
+expect_status template 0
+expect_line template "模板占位包已移除: burncloud-template"
+expect_absent template "破坏性改动"
+expect_invoked template "$template_base" kept
+expect_not_invoked template burncloud-template
+printf '%s\n' "PASS template exit ${status}"
+
+lookalike=${tmp}/lookalike
+init_repo "$lookalike"
+write_workspace "$lookalike/Cargo.toml" crates/kept crates/burncloud-template-x crates/burncloud_template
+write_lib "$lookalike/crates/kept" kept
+write_lib "$lookalike/crates/burncloud-template-x" burncloud-template-x
+write_lib "$lookalike/crates/burncloud_template" burncloud_template
+lookalike_base=$(snap "$lookalike" baseline)
+rm -rf "$lookalike/crates/burncloud-template-x" "$lookalike/crates/burncloud_template"
+write_workspace "$lookalike/Cargo.toml" crates/kept
+snap "$lookalike" current >/dev/null
+run_at "$lookalike" "$lookalike_base" ""
+expect_status lookalike 1
+expect_line lookalike "semver: 包 burncloud-template-x 在基线存在、当前不存在，算破坏性改动。"
+expect_line lookalike "semver: 包 burncloud_template 在基线存在、当前不存在，算破坏性改动。"
+expect_absent lookalike "模板占位包已移除"
+expect_invoked lookalike "$lookalike_base" kept
+expect_not_invoked lookalike burncloud-template-x
+expect_not_invoked lookalike burncloud_template
+printf '%s\n' "PASS lookalike exit ${status}"
