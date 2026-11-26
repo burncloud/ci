@@ -53,6 +53,11 @@ on:
         required: false
         type: string
         default: ""
+      postgres:
+        description: 为 true 时给 cargo-test 挂 Postgres 16，并设置 DATABASE_URL。默认关闭。
+        required: false
+        type: boolean
+        default: false
   pull_request:
   merge_group:
 
