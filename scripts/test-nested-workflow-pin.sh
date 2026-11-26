@@ -65,6 +65,7 @@ base=$(git -C "$repo" rev-parse HEAD)
 write_rust "$repo" "$base"
 git -C "$repo" add .
 git -C "$repo" commit -q -m pin
+pinned_commit=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" update-ref refs/remotes/origin/main HEAD
 bash "$check" "$repo"
 echo "PASS nested pin good"
@@ -87,10 +88,20 @@ expect_fail ancestor "$repo" "不是 origin/main 的祖先"
 write_rust "$repo" "$base"
 printf '\nextra\n' >>"$repo/.github/workflows/lint.yml"
 bash "$check" "$repo" >/dev/null
-echo "PASS nested pin ignores content"
-expect_fail content "$repo" "内容不一致" --release
-git -C "$repo" checkout -q -- .github/workflows/lint.yml
+bash "$check" --release "$repo" >/dev/null
+echo "PASS nested pin ignores uncommitted"
+git -C "$repo" add .github/workflows/lint.yml .github/workflows/rust.yml
+git -C "$repo" commit -q -m drift-yml
+bash "$check" "$repo" >/dev/null
+echo "PASS nested pin ignores committed content"
+expect_fail content "$repo" ".github/workflows/lint.yml" --release
+git -C "$repo" reset -q --hard "$pinned_commit"
 bash "$check" --release "$repo"
 echo "PASS nested pin release"
-bash "$check" --release "$root"
-echo "PASS current repo release"
+mkdir -p "$repo/scripts"
+printf 'printf ok\n' >"$repo/scripts/changed.sh"
+git -C "$repo" add scripts/changed.sh
+git -C "$repo" commit -q -m drift-script
+bash "$check" "$repo" >/dev/null
+echo "PASS nested pin ignores scripts"
+expect_fail scripts "$repo" "scripts/changed.sh" --release

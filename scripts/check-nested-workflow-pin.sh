@@ -65,15 +65,12 @@ if ! git -C "$repo" merge-base --is-ancestor "$sha" refs/remotes/origin/main; th
 fi
 
 if [[ "$release" -eq 1 ]]; then
-  for name in "${names[@]}"; do
-    path=".github/workflows/${name}.yml"
-    current=$(git -C "$repo" hash-object "$repo/$path")
-    pinned=$(git -C "$repo" rev-parse "${sha}:${path}")
-    if [[ "$current" != "$pinned" ]]; then
-      echo "nested-pin: ${path} 与 ${sha} 的内容不一致" >&2
-      exit 1
-    fi
-  done
+  diff_out=$(git -C "$repo" diff --name-only "$sha" HEAD -- . ':!.github/workflows/rust.yml' ':!.github/workflows/ci.yml')
+  if [[ -n "$diff_out" ]]; then
+    echo "nested-pin: ${sha} 与 HEAD 不一致" >&2
+    printf '%s\n' "$diff_out" >&2
+    exit 1
+  fi
 fi
 
 echo "nested-pin: ${sha}"

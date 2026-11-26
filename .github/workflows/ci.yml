@@ -653,3 +653,17 @@ jobs:
       run-mutants: false
       concurrency-key: caller-with
 
+  release-ready:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check release pin
+        run: bash scripts/check-nested-workflow-pin.sh --release
+
