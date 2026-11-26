@@ -27,8 +27,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   if [[ "$line" =~ ^[[:space:]]*uses:[[:space:]]*burncloud/ci/\.github/workflows/([A-Za-z0-9._-]+)\.yml@([^[:space:]#]+) ]]; then
     name="${BASH_REMATCH[1]}"
     ref="${BASH_REMATCH[2]}"
-    if [[ -n "${ref_of[$name]+x}" ]]; then
-      echo "nested-pin: ${name} 出现了多次" >&2
+    if [[ -n "${ref_of[$name]+x}" && "${ref_of[$name]}" != "$ref" ]]; then
+      echo "nested-pin: sha 不一致: ${name} 是 ${ref}，其他是 ${ref_of[$name]}" >&2
       exit 1
     fi
     ref_of[$name]=$ref

@@ -1,0 +1,13 @@
+[package]
+name = "burncloud-ci-postgres"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Connects to Postgres when the cargo-test postgres input is enabled."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dev-dependencies]
+postgres = { version = "=0.19.12", default-features = false }

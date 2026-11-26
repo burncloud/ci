@@ -69,6 +69,11 @@ pinned_commit=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" update-ref refs/remotes/origin/main HEAD
 bash "$check" "$repo"
 echo "PASS nested pin good"
+printf '  extra:\n    uses: burncloud/ci/.github/workflows/test.yml@%s\n' "$base" >>"$repo/.github/workflows/rust.yml"
+bash "$check" "$repo"
+echo "PASS nested pin duplicate"
+printf '  other:\n    uses: burncloud/ci/.github/workflows/test.yml@%s\n' 1111111111111111111111111111111111111111 >>"$repo/.github/workflows/rust.yml"
+expect_fail duplicate-sha "$repo" "sha 不一致"
 
 write_rust "$repo" "$base" 1111111111111111111111111111111111111111
 expect_fail mismatch "$repo" "sha 不一致"

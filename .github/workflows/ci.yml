@@ -653,6 +653,12 @@ jobs:
       run-mutants: false
       concurrency-key: caller-with
 
+  postgres:
+    uses: ./.github/workflows/test.yml
+    with:
+      working-directory: tests/postgres
+      postgres: true
+
   release-ready:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04

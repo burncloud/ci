@@ -53,6 +53,11 @@ on:
         required: false
         type: string
         default: ""
+      postgres:
+        description: 为 true 时给 cargo-test 挂 Postgres 16，并设置 DATABASE_URL。默认关闭。
+        required: false
+        type: boolean
+        default: false
   pull_request:
   merge_group:
 
@@ -103,7 +108,7 @@ jobs:
 
   test:
     needs: resolve
-    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped') && inputs.postgres != true
     uses: burncloud/ci/.github/workflows/test.yml@849394bb49bc21281a5ab48b0163bd213caa84ef
     with:
       toolchain: ${{ inputs.toolchain }}
@@ -113,6 +118,20 @@ jobs:
       run-proptest: ${{ inputs.run-proptest == true }}
       run-fuzz: ${{ inputs.run-fuzz == true }}
       run-mutants: ${{ inputs.run-mutants == true }}
+
+  test-postgres:
+    needs: resolve
+    if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped') && inputs.postgres == true
+    uses: burncloud/ci/.github/workflows/test.yml@849394bb49bc21281a5ab48b0163bd213caa84ef
+    with:
+      toolchain: ${{ inputs.toolchain }}
+      working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
+      targets: ${{ inputs.targets }}
+      wit-dir: ${{ inputs.wit-dir || 'wit' }}
+      run-proptest: ${{ inputs.run-proptest == true }}
+      run-fuzz: ${{ inputs.run-fuzz == true }}
+      run-mutants: ${{ inputs.run-mutants == true }}
+      postgres: true
 
   supply-chain:
     needs: resolve

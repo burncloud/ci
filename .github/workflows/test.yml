@@ -38,6 +38,11 @@ on:
         required: false
         type: boolean
         default: false
+      postgres:
+        description: 为 true 时给 cargo-test 挂 Postgres 16，并设置 DATABASE_URL。默认关闭。
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -50,6 +55,16 @@ jobs:
   cargo-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    services:
+      postgres:
+        image: ${{ inputs.postgres == true && 'postgres:16@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: ${{ inputs.postgres == true && '--health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5' || '' }}
     steps:
       - name: Checkout caller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,7 +96,15 @@ jobs:
 
       - name: cargo test
         working-directory: ${{ inputs.working-directory }}
-        run: cargo test --locked --workspace --all-targets --all-features
+        env:
+          POSTGRES: ${{ inputs.postgres }}
+          DATABASE_URL: ${{ inputs.postgres == true && 'postgres://postgres:postgres@127.0.0.1:5432/postgres' || '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$POSTGRES" != "true" ]]; then
+            unset DATABASE_URL
+          fi
+          cargo test --locked --workspace --all-targets --all-features
 
   doc-test:
     runs-on: ubuntu-24.04
