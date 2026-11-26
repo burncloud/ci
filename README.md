@@ -69,7 +69,14 @@ Cursor GitHub App（app id `1210556`，slug `cursor`，来自 `GET /apps/cursor`
 
 脚本和默认 `deny.toml` 用 `actions/checkout` 取工作流定义仓库的 `job.workflow_sha`，放到 `.burncloud-ci`，不再从 `raw.githubusercontent.com` 下载。
 
-可复用工作流里再调用本仓库的工作流时用 `$/.github/workflows/...`。它落在写出这个 `uses` 的文件所在仓库、以及该文件这次被加载的同一次提交上。`./` 会按最外层调用方仓库解析：pull request 上现在还能找到 `burncloud/ci` 里的文件，push 到调用方的 `main` 时会在解析阶段报 workflow was not found，一个 job 都不会启动。
+可复用工作流里再调用本仓库的工作流，写成 `burncloud/ci/.github/workflows/<file>.yml@<40 位小写 sha>`。`./` 和 `$/` 在别的仓库 push 到 main 时都按调用方仓库解析，解析阶段就失败。v1.2.2 的 `$/` 已经在 billing 的 push 上这样失败过。
+
+改 `lint.yml`、`test.yml`、`supply-chain.yml`、`api.yml`、`protect.yml` 不能在同一个 PR 里把 sha 拨到「这个 PR 里改这些文件的那个提交」。合并是 squash：合并提交的 sha 要到合并之后才存在，PR 里的中间提交也不会留在 main 的历史上。自检要求这五处 sha 相同、是 40 位小写十六进制、是 HEAD 的祖先，并且该提交上的五个文件和当前内容一致。squash 之后那个中间提交不是祖先，main 的 push 自检会失败。
+
+所以分两个 PR：
+
+1. 只改嵌套工作流文件，不要改 `rust.yml` 里的 sha。这一 PR 的自检会失败，因为当前文件和 pin 上的内容不一致。合并需要管理员绕过这次失败的自检。合并后的 squash 提交记为 S。在 S 之后、下一步合并之前，main 上的同一项自检也是失败的。
+2. 从包含 S 的 main 再开一个 PR，只把 `rust.yml` 五处 sha 改成 S。S 是这一 PR 的祖先，五个嵌套文件没有再改，和 S 上的内容一致，自检可以通过。squash 合并后新的 main 提交仍以包含 S 的历史为祖先，自检继续通过。
 
 ## 五层
 
@@ -183,6 +190,9 @@ bash scripts/run-cargo-vet.sh tests/fixture
 bash scripts/scan-capabilities.sh tests/fixture
 bash scripts/test-semver-checks.sh
 bash scripts/check-reusable-uses.sh .github/workflows
+bash scripts/check-nested-workflow-pin.sh
+bash scripts/test-reusable-uses.sh
+bash scripts/test-nested-workflow-pin.sh
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py

@@ -2,6 +2,6 @@ on:
   workflow_call:
 jobs:
   lint:
-    uses: $/.github/workflows/lint.yml
-  pin:
-    uses: burncloud/ci/.github/workflows/test.yml@latest
+    uses: burncloud/ci/.github/workflows/lint.yml@83e0fa0d5106d74e57917882a456783a368f488a
+  test:
+    uses: burncloud/ci/.github/workflows/test.yml@83e0fa0d5106d74e57917882a456783a368f488a

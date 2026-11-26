@@ -96,7 +96,7 @@ jobs:
   lint:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: $/.github/workflows/lint.yml
+    uses: burncloud/ci/.github/workflows/lint.yml@83e0fa0d5106d74e57917882a456783a368f488a
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -104,7 +104,7 @@ jobs:
   test:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: $/.github/workflows/test.yml
+    uses: burncloud/ci/.github/workflows/test.yml@83e0fa0d5106d74e57917882a456783a368f488a
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -117,7 +117,7 @@ jobs:
   supply-chain:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: $/.github/workflows/supply-chain.yml
+    uses: burncloud/ci/.github/workflows/supply-chain.yml@83e0fa0d5106d74e57917882a456783a368f488a
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -125,7 +125,7 @@ jobs:
   api:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: $/.github/workflows/api.yml
+    uses: burncloud/ci/.github/workflows/api.yml@83e0fa0d5106d74e57917882a456783a368f488a
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -134,6 +134,6 @@ jobs:
   protect:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: $/.github/workflows/protect.yml
+    uses: burncloud/ci/.github/workflows/protect.yml@83e0fa0d5106d74e57917882a456783a368f488a
     with:
       protected-paths: ${{ inputs.protected-paths }}
