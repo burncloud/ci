@@ -9,9 +9,15 @@ expect_fail() {
   local name=$1
   local repo=$2
   local needle=$3
+  local mode=${4:-}
   local status=0
   local out
-  out=$(bash "$check" "$repo" 2>&1) || status=$?
+  local -a args=()
+  if [[ -n "$mode" ]]; then
+    args+=("$mode")
+  fi
+  args+=("$repo")
+  out=$(bash "$check" "${args[@]}" 2>&1) || status=$?
   if [[ "$status" -eq 0 ]]; then
     echo "FAIL ${name}: 应当失败" >&2
     printf '%s\n' "$out" >&2
@@ -59,6 +65,7 @@ base=$(git -C "$repo" rev-parse HEAD)
 write_rust "$repo" "$base"
 git -C "$repo" add .
 git -C "$repo" commit -q -m pin
+git -C "$repo" update-ref refs/remotes/origin/main HEAD
 bash "$check" "$repo"
 echo "PASS nested pin good"
 
@@ -73,9 +80,17 @@ git -C "$repo" add .
 git -C "$repo" commit -q -m side
 side=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" checkout -q main
+git -C "$repo" update-ref refs/remotes/origin/main "$base"
 write_rust "$repo" "$side"
-expect_fail ancestor "$repo" "不是 HEAD 的祖先"
+expect_fail ancestor "$repo" "不是 origin/main 的祖先"
 
 write_rust "$repo" "$base"
 printf '\nextra\n' >>"$repo/.github/workflows/lint.yml"
-expect_fail content "$repo" "内容不一致"
+bash "$check" "$repo" >/dev/null
+echo "PASS nested pin ignores content"
+expect_fail content "$repo" "内容不一致" --release
+git -C "$repo" checkout -q -- .github/workflows/lint.yml
+bash "$check" --release "$repo"
+echo "PASS nested pin release"
+bash "$check" --release "$root"
+echo "PASS current repo release"

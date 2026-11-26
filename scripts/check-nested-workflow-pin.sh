@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=${1:-.}
+release=0
+repo=.
+for arg in "$@"; do
+  case "$arg" in
+    --release)
+      release=1
+      ;;
+    *)
+      repo=$arg
+      ;;
+  esac
+done
 repo=$(cd "$repo" && pwd)
 rust=$repo/.github/workflows/rust.yml
 if [[ ! -f "$rust" ]]; then
@@ -44,19 +55,25 @@ for name in "${names[@]}"; do
 done
 
 sha=$first
-if ! git -C "$repo" merge-base --is-ancestor "$sha" HEAD; then
-  echo "nested-pin: ${sha} 不是 HEAD 的祖先" >&2
+if ! git -C "$repo" rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+  echo "nested-pin: 没有 origin/main" >&2
+  exit 1
+fi
+if ! git -C "$repo" merge-base --is-ancestor "$sha" refs/remotes/origin/main; then
+  echo "nested-pin: ${sha} 不是 origin/main 的祖先" >&2
   exit 1
 fi
 
-for name in "${names[@]}"; do
-  path=".github/workflows/${name}.yml"
-  current=$(git -C "$repo" hash-object "$repo/$path")
-  pinned=$(git -C "$repo" rev-parse "${sha}:${path}")
-  if [[ "$current" != "$pinned" ]]; then
-    echo "nested-pin: ${path} 与 ${sha} 的内容不一致" >&2
-    exit 1
-  fi
-done
+if [[ "$release" -eq 1 ]]; then
+  for name in "${names[@]}"; do
+    path=".github/workflows/${name}.yml"
+    current=$(git -C "$repo" hash-object "$repo/$path")
+    pinned=$(git -C "$repo" rev-parse "${sha}:${path}")
+    if [[ "$current" != "$pinned" ]]; then
+      echo "nested-pin: ${path} 与 ${sha} 的内容不一致" >&2
+      exit 1
+    fi
+  done
+fi
 
 echo "nested-pin: ${sha}"
