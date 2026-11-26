@@ -69,6 +69,8 @@ Cursor GitHub App（app id `1210556`，slug `cursor`，来自 `GET /apps/cursor`
 
 脚本和默认 `deny.toml` 用 `actions/checkout` 取工作流定义仓库的 `job.workflow_sha`，放到 `.burncloud-ci`，不再从 `raw.githubusercontent.com` 下载。
 
+可复用工作流里再调用本仓库的工作流时用 `$/.github/workflows/...`。它落在写出这个 `uses` 的文件所在仓库、以及该文件这次被加载的同一次提交上。`./` 会按最外层调用方仓库解析：pull request 上现在还能找到 `burncloud/ci` 里的文件，push 到调用方的 `main` 时会在解析阶段报 workflow was not found，一个 job 都不会启动。
+
 ## 五层
 
 汇总工作流是 [`.github/workflows/rust.yml`](.github/workflows/rust.yml)。它有 `workflow_call`、`pull_request` 和 `merge_group`。权限是 `contents: read`。`cargo` 命令带 `--locked`。同一 PR 的新提交会取消旧运行。
@@ -180,6 +182,7 @@ cargo audit
 bash scripts/run-cargo-vet.sh tests/fixture
 bash scripts/scan-capabilities.sh tests/fixture
 bash scripts/test-semver-checks.sh
+bash scripts/check-reusable-uses.sh .github/workflows
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py

@@ -1,0 +1,7 @@
+on:
+  workflow_call:
+jobs:
+  lint:
+    uses: $/.github/workflows/lint.yml
+  pin:
+    uses: burncloud/ci/.github/workflows/test.yml@latest
