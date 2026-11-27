@@ -188,7 +188,7 @@ jobs:
 
 `rust.yml` 里的 `rust-only` job 直接跑 [`scripts/check-rust-only.sh`](scripts/check-rust-only.sh)，不另起嵌套工作流，所以不占用那五处 pin。它用 `git ls-files -s` 扫描调用方仓库的已跟踪条目，只认白名单，没有黑名单。index mode `160000` 的子模块不论名字一律失败。
 
-放行：`*.rs`；`Cargo.toml`、`Cargo.lock`；`rust-toolchain`、`rust-toolchain.toml`；所有 `*.toml`；`supply-chain/` 下的 `*.lock`；`*.md`；`.github/` 下的 `*.yml`、`*.yaml`，以及 `.github/CODEOWNERS`；`migrations/` 下的 `*.sql`；`.gitignore`；`LICENSE`、`LICENSE-MIT`、`LICENSE-APACHE`、`LICENSE.md`、`LICENSE.txt`。路径都相对仓库根。其余已跟踪文件全部失败，并逐个打印路径。
+放行：`*.rs`；`Cargo.toml`、`Cargo.lock`；`rust-toolchain`、`rust-toolchain.toml`；所有 `*.toml`；`supply-chain/` 下的 `*.lock`；`*.md`；`.github/` 下的 `*.yml`、`*.yaml`，以及 `.github/CODEOWNERS`；直接位于名为 `migrations` 的目录里的 `*.sql`（`migrations/*.sql` 和 `**/migrations/*.sql`）；`.gitignore`；`LICENSE`、`LICENSE-MIT`、`LICENSE-APACHE`、`LICENSE.md`、`LICENSE.txt`。`migrations` 再下一层的 `.sql`、名字只是包含 `migrations` 的目录，以及 `migrations` 里的其他后缀都不放行。路径都相对仓库根。其余已跟踪文件全部失败，并逐个打印路径。
 
 调用方 job id 是 `rust` 时，检查名是 `rust / rust-only`。本仓库直接触发时是 `rust-only`，`ci.yml` 里另一次调用是 `caller / rust-only`。
 
