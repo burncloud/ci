@@ -90,6 +90,9 @@ track "$pure" crates/util/.gitignore
 track "$pure" LICENSE
 track "$pure" LICENSE-APACHE
 track "$pure" LICENSE-MIT
+track "$pure" LICENSE.md
+track "$pure" LICENSE.txt
+track "$pure" "src/my file.rs"
 expect_ok pure "$pure"
 
 migrations_only=$(new_repo)
@@ -164,3 +167,82 @@ if ! grep -F -x -e 'rust-only: 当前仓库是 burncloud/ci。不合规文件已
   exit 1
 fi
 echo "PASS exempt"
+
+license_py=$(new_repo)
+track "$license_py" src/lib.rs
+track "$license_py" LICENSE
+track "$license_py" LICENSE-MIT
+track "$license_py" LICENSE-APACHE
+track "$license_py" LICENSE.md
+track "$license_py" LICENSE.txt
+track "$license_py" LICENSE.py
+status=0
+out=$(bash "$check" "$license_py" 2>&1) || status=$?
+if [[ "$status" -eq 0 ]]; then
+  echo "FAIL license-py: 应当失败" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -x -e 'rust-only: LICENSE.py' >/dev/null <<<"$out"; then
+  echo "FAIL license-py: 输出没有 LICENSE.py" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+for kept in LICENSE LICENSE-MIT LICENSE-APACHE LICENSE.md LICENSE.txt src/lib.rs; do
+  if grep -F -x -e "rust-only: ${kept}" >/dev/null <<<"$out"; then
+    echo "FAIL license-py: ${kept} 不应报出" >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+done
+echo "PASS license-py"
+
+space=$(new_repo)
+track "$space" "src/my file.rs"
+track "$space" "bad name.py"
+status=0
+out=$(bash "$check" "$space" 2>&1) || status=$?
+if [[ "$status" -eq 0 ]]; then
+  echo "FAIL space: 应当失败" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -x -e 'rust-only: bad name.py' >/dev/null <<<"$out"; then
+  echo "FAIL space: 输出没有 bad name.py" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if grep -F -x -e 'rust-only: src/my file.rs' >/dev/null <<<"$out"; then
+  echo "FAIL space: src/my file.rs 不应报出" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+echo "PASS space"
+
+gitlink=$(new_repo)
+track "$gitlink" src/lib.rs
+track "$gitlink" README.md
+git -C "$gitlink" update-index --add --cacheinfo 160000,0123456789abcdef0123456789abcdef01234567,vendor.md
+status=0
+out=$(bash "$check" "$gitlink" 2>&1) || status=$?
+if [[ "$status" -eq 0 ]]; then
+  echo "FAIL gitlink: 应当失败" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -x -e 'rust-only: vendor.md' >/dev/null <<<"$out"; then
+  echo "FAIL gitlink: 输出没有 vendor.md" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if grep -F -x -e 'rust-only: README.md' >/dev/null <<<"$out"; then
+  echo "FAIL gitlink: README.md 不应报出" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if grep -F -x -e 'rust-only: src/lib.rs' >/dev/null <<<"$out"; then
+  echo "FAIL gitlink: src/lib.rs 不应报出" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+echo "PASS gitlink"

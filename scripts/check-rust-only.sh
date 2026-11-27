@@ -63,7 +63,7 @@ allowed() {
   local path=$1
   local base=${path##*/}
   case "$base" in
-    *.rs | Cargo.toml | Cargo.lock | rust-toolchain | rust-toolchain.toml | *.toml | *.md | .gitignore | LICENSE*)
+    LICENSE | LICENSE-MIT | LICENSE-APACHE | LICENSE.md | LICENSE.txt | *.rs | Cargo.toml | Cargo.lock | rust-toolchain | rust-toolchain.toml | *.toml | *.md | .gitignore)
       return 0
       ;;
   esac
@@ -92,12 +92,14 @@ allowed() {
 
 list=$(mktemp)
 trap 'rm -f "$list"' EXIT
-git -C "$toplevel" ls-files -z >"$list"
+git -C "$toplevel" ls-files -s -z >"$list"
 
 hits=0
-while IFS= read -r -d '' path || [[ -n "$path" ]]; do
-  [[ -z "$path" ]] && continue
-  if ! allowed "$path"; then
+while IFS= read -r -d '' record || [[ -n "$record" ]]; do
+  [[ -z "$record" ]] && continue
+  mode=${record%% *}
+  path=${record#*$'\t'}
+  if [[ "$mode" == "160000" ]] || ! allowed "$path"; then
     printf 'rust-only: %s\n' "$path"
     hits=1
   fi
