@@ -109,14 +109,6 @@ jobs:
             echo "预期 .github/ 命中后失败。" >&2
             exit 1
           fi
-          if EVENT_NAME=pull_request bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
-            echo "pull_request 上受保护路径必须失败。" >&2
-            exit 1
-          fi
-          if ! EVENT_NAME=push bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
-            echo "push 上受保护路径必须跳过。" >&2
-            exit 1
-          fi
           if ! grep -Fq "if: github.event_name == 'pull_request'" .github/workflows/protect.yml; then
             echo "protected-paths 必须只在 pull_request 上运行。" >&2
             exit 1

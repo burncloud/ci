@@ -182,7 +182,7 @@ jobs:
 
 豁免只在 `github.repository` 和 `job.workflow_repository` 都是 `burncloud/ci` 时生效。把工作流复制到别的仓库再用相对路径引用，不会再被当成源仓库。fork 上的 `github.repository` 仍是 base 仓库；如果 workflow 也来自 `burncloud/ci`，这次豁免仍会生效。跨仓库的真实行为还要用一个外部 crate 仓库核对。调用方用 `@latest`；要钉死就用 `vX.Y.Z` 或 40 位 SHA。
 
-`protected-paths` 这个 job 只在 `pull_request` 上运行。push 到 main 不比较 diff，也不判失败。`merge_group` 同样不跑这个 job。
+`protected-paths` 只在 `pull_request` 上比较 diff，push 和 `merge_group` 不跑这个 job。
 
 ### 6. 只放行 Rust 仓库文件
 

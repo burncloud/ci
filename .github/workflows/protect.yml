@@ -36,10 +36,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          MERGE_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
-          BEFORE: ${{ github.event.before }}
-          SHA: ${{ github.sha }}
           PROTECTED_PATHS: ${{ inputs.protected-paths }}
           GH_TOKEN: ${{ github.token }}
           JOB_JSON: ${{ toJSON(job) }}
@@ -54,20 +50,12 @@ jobs:
           fi
 
           case "$EVENT_NAME" in
-            pull_request | pull_request_target)
+            pull_request)
               base=$BASE_SHA
               head=$HEAD_SHA
               ;;
-            merge_group)
-              base=$MERGE_BASE_SHA
-              head=$MERGE_HEAD_SHA
-              ;;
-            push)
-              echo "protected: push 事件不比较 diff，跳过。"
-              exit 0
-              ;;
             *)
-              echo "protected: 事件 ${EVENT_NAME} 没有可比较的 diff，跳过。"
+              echo "protected: 事件 ${EVENT_NAME} 不比较 diff，跳过。"
               exit 0
               ;;
           esac
@@ -76,10 +64,9 @@ jobs:
             echo "protected: 无法确定 diff 的 head，拒绝放行。" >&2
             exit 1
           fi
-          if [[ -z "$base" || "$base" == "null" || "$base" =~ ^0+$ ]]; then
-            default_branch=$(gh api "repos/${REPO}" --jq .default_branch)
-            base=$(gh api "repos/${REPO}/commits/${default_branch}" --jq .sha)
-            echo "protected: before 不可用，改为和默认分支 ${default_branch} (${base}) 比较。"
+          if [[ -z "$base" || "$base" == "null" ]]; then
+            echo "protected: 无法确定 diff 的 base，拒绝放行。" >&2
+            exit 1
           fi
 
           tmp=$(mktemp -d)

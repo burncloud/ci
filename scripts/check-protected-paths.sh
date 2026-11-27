@@ -58,11 +58,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "${EVENT_NAME:-}" == "push" ]]; then
-  echo "protected: push 事件不比较 diff，跳过。"
-  exit 0
-fi
-
 if [[ -z "$changed" || ! -f "$changed" ]]; then
   usage
   exit 2
