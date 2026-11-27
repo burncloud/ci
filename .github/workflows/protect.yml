@@ -18,6 +18,7 @@ defaults:
 
 jobs:
   protected-paths:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -62,8 +63,8 @@ jobs:
               head=$MERGE_HEAD_SHA
               ;;
             push)
-              base=$BEFORE
-              head=$SHA
+              echo "protected: push 事件不比较 diff，跳过。"
+              exit 0
               ;;
             *)
               echo "protected: 事件 ${EVENT_NAME} 没有可比较的 diff，跳过。"
