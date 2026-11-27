@@ -663,6 +663,7 @@ jobs:
     with:
       working-directory: tests/postgres
       postgres: true
+      run-mutants: true
 
   protect-self:
     uses: ./.github/workflows/protect.yml
