@@ -98,7 +98,7 @@ while IFS= read -r -d '' record || [[ -n "$record" ]]; do
   [[ -z "$record" ]] && continue
   mode=${record%% *}
   path=${record#*$'\t'}
-  if [[ "$mode" == "160000" ]] || ! allowed "$path"; then
+  if [[ "$mode" == "160000" || "$mode" == "120000" ]] || ! allowed "$path"; then
     printf 'rust-only: %s\n' "$path"
     hits=1
   fi

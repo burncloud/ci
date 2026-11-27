@@ -246,6 +246,68 @@ if grep -F -x -e 'rust-only: src/lib.rs' >/dev/null <<<"$out"; then
 fi
 echo "PASS gitlink"
 
+symlink_rs=$(new_repo)
+track "$symlink_rs" src/lib.rs
+ln -s ../tools/x.py "$symlink_rs/src/evil.rs"
+git -C "$symlink_rs" add -- src/evil.rs
+if ! git -C "$symlink_rs" ls-files -s -- src/evil.rs | grep -q '^120000 '; then
+  echo "FAIL symlink-rs: 索引不是 120000" >&2
+  git -C "$symlink_rs" ls-files -s -- src/evil.rs >&2
+  exit 1
+fi
+status=0
+out=$(bash "$check" "$symlink_rs" 2>&1) || status=$?
+if [[ "$status" -eq 0 ]]; then
+  echo "FAIL symlink-rs: 应当失败" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -x -e 'rust-only: src/evil.rs' >/dev/null <<<"$out"; then
+  echo "FAIL symlink-rs: 输出没有 src/evil.rs" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if grep -F -x -e 'rust-only: src/lib.rs' >/dev/null <<<"$out"; then
+  echo "FAIL symlink-rs: src/lib.rs 不应报出" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+echo "PASS symlink-rs"
+
+symlink_sql=$(new_repo)
+track "$symlink_sql" src/lib.rs
+track "$symlink_sql" migrations/0001.sql
+ln -s /etc/passwd "$symlink_sql/migrations/0002.sql"
+git -C "$symlink_sql" add -- migrations/0002.sql
+if ! git -C "$symlink_sql" ls-files -s -- migrations/0002.sql | grep -q '^120000 '; then
+  echo "FAIL symlink-sql: 索引不是 120000" >&2
+  git -C "$symlink_sql" ls-files -s -- migrations/0002.sql >&2
+  exit 1
+fi
+status=0
+out=$(bash "$check" "$symlink_sql" 2>&1) || status=$?
+if [[ "$status" -eq 0 ]]; then
+  echo "FAIL symlink-sql: 应当失败" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -x -e 'rust-only: migrations/0002.sql' >/dev/null <<<"$out"; then
+  echo "FAIL symlink-sql: 输出没有 migrations/0002.sql" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if grep -F -x -e 'rust-only: migrations/0001.sql' >/dev/null <<<"$out"; then
+  echo "FAIL symlink-sql: migrations/0001.sql 不应报出" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if grep -F -x -e 'rust-only: src/lib.rs' >/dev/null <<<"$out"; then
+  echo "FAIL symlink-sql: src/lib.rs 不应报出" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+echo "PASS symlink-sql"
+
 crate_sql=$(new_repo)
 track "$crate_sql" src/lib.rs
 track "$crate_sql" migrations/0001.sql
