@@ -52,7 +52,7 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 `.github/CODEOWNERS` 把全部路径交给 `@rustburn` 和 `@ivories`。`rustburn` 负责写代码，是 owner，紧急时走仓库管理员的 `pull_request` bypass。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。两人在 GitHub 上都要有写权限。`gh api repos/burncloud/ci/codeowners/errors` 返回的 `errors` 为空才算配好。
 
-必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。新增的注释检查同样按这个形状列入：`lint / comments`、`rust / lint / comments`、`caller / lint / comments`。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
+必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。新增的注释检查同样按这个形状列入：`lint / comments`、`rust / lint / comments`、`caller / lint / comments`。`rust-only` 是 `rust.yml` 里的直接 job，检查名是 `rust-only`、`rust / rust-only`、`caller / rust-only`。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
 
 标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此 `v*` 拆成两份，`latest` 再拆成「不能删」和「可以移动」两份。`refs/tags/v*` 是通配，两份 `v*` 规则集都显式 `exclude` `refs/tags/latest`，避免把浮动标签卷进去。
 
@@ -167,6 +167,7 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 - `rust / api / semver`
 - `rust / api / capabilities`
 - `rust / protect / protected-paths`
+- `rust / rust-only`
 
 通过 required workflow 注入时不经过这个 job id，检查名还没有核对，**待验证**。在那之前，下面的 JSON 不包含 `required_status_checks`，避免名字对不上时所有 PR 被永远卡住。
 

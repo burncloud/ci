@@ -247,6 +247,7 @@ jobs:
           bash scripts/check-nested-workflow-pin.sh
           bash scripts/test-reusable-uses.sh
           bash scripts/test-nested-workflow-pin.sh
+          bash scripts/test-rust-only.sh
 
       - name: Check clippy and comments
         run: |

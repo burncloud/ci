@@ -125,6 +125,10 @@
             "integration_id": 15368
           },
           {
+            "context": "rust-only",
+            "integration_id": 15368
+          },
+          {
             "context": "rust / lint / fmt",
             "integration_id": 15368
           },
@@ -201,6 +205,10 @@
             "integration_id": 15368
           },
           {
+            "context": "rust / rust-only",
+            "integration_id": 15368
+          },
+          {
             "context": "caller / lint / fmt",
             "integration_id": 15368
           },
@@ -274,6 +282,10 @@
           },
           {
             "context": "caller / protect / protected-paths",
+            "integration_id": 15368
+          },
+          {
+            "context": "caller / rust-only",
             "integration_id": 15368
           }
         ]

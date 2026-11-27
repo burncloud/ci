@@ -80,7 +80,7 @@ PR 上的自检只查格式：五处 `uses` 都是这个形式，五个 sha 相�
 1. 只改这些文件，不要改 `rust.yml` 里的 sha。sha 仍是当时 `origin/main` 上的旧提交，格式检查通过，这一 PR 可以全绿。合并后的 squash 提交记为 S。main 上的 `release-ready` 会红，表示当前不能发版。这一步的 PR 里，`rust.yml` 调用的还是钉住的旧嵌套文件。新改的嵌套文件和脚本不会在这一步经过 `rust.yml` 跑一遍。
 2. 从包含 S 的 main 再开一个 PR，只把 `rust.yml` 五处 sha 改成 S。S 已经在 `origin/main` 上。这一步 `ci.yml` 的 `rust` 和 `caller` 会用新 sha，新改动第一次真正运行。这一 PR 必须全绿才能发版。squash 合并后 `release-ready` 恢复绿色。只给这个绿色的 main 提交打 `vX.Y.Z`，再移动 `latest`。
 
-## 五层
+## 六层
 
 汇总工作流是 [`.github/workflows/rust.yml`](.github/workflows/rust.yml)。它有 `workflow_call`、`pull_request` 和 `merge_group`。权限是 `contents: read`。`cargo` 命令带 `--locked`。同一 PR 的新提交会取消旧运行。
 
@@ -184,6 +184,16 @@ jobs:
 
 `merge_group` 用事件里的 `base_sha` 和 `head_sha` 比较。新分支 push 的 `before` 如果是全 0，改为和默认分支比较。
 
+### 6. 只放行 Rust 仓库文件
+
+`rust.yml` 里的 `rust-only` job 直接跑 [`scripts/check-rust-only.sh`](scripts/check-rust-only.sh)，不另起嵌套工作流，所以不占用那五处 pin。它用 `git ls-files -s` 扫描调用方仓库的已跟踪条目，只认白名单，没有黑名单。index mode `160000` 的子模块不论名字一律失败。
+
+放行：`*.rs`；`Cargo.toml`、`Cargo.lock`；`rust-toolchain`、`rust-toolchain.toml`；所有 `*.toml`；`supply-chain/` 下的 `*.lock`；`*.md`；`.github/` 下的 `*.yml`、`*.yaml`，以及 `.github/CODEOWNERS`；`migrations/` 下的 `*.sql`；`.gitignore`；`LICENSE`、`LICENSE-MIT`、`LICENSE-APACHE`、`LICENSE.md`、`LICENSE.txt`。路径都相对仓库根。其余已跟踪文件全部失败，并逐个打印路径。
+
+调用方 job id 是 `rust` 时，检查名是 `rust / rust-only`。本仓库直接触发时是 `rust-only`，`ci.yml` 里另一次调用是 `caller / rust-only`。
+
+豁免和 `protected-paths` 同一条件：`github.repository` 与 `job.workflow_repository` 都是 `burncloud/ci` 时只打印不合规文件，退出码仍是 0。其他仓库会失败。
+
 ## 本仓库自测
 
 [`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`ci.yml` 用 `uses` 加 `with` 调用 `rust.yml` 两次：一次打开 proptest、fuzz、mutants，并把 semver 基线设为 `9236264ec7b8a7b22c622fd0d0ad69c495b15348`；一次把 `targets` 设为 `wasm32-wasip2`、三个开关关闭。另有一个 job 用 `./.github/workflows/test.yml` 直接调用本仓库的 `test.yml`，`working-directory` 是 [`tests/postgres`](tests/postgres)，`postgres` 为 true。这个 crate 的测试在没有 `DATABASE_URL` 时失败。`rust.yml` 自己的 `pull_request` 触发仍会再跑一遍默认输入。只有 `burncloud/ci` 在没有根 `Cargo.toml` 时会回退到 `tests/fixture`。
@@ -210,6 +220,7 @@ bash scripts/check-nested-workflow-pin.sh
 bash scripts/check-nested-workflow-pin.sh --release
 bash scripts/test-reusable-uses.sh
 bash scripts/test-nested-workflow-pin.sh
+bash scripts/test-rust-only.sh
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py
