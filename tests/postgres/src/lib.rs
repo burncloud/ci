@@ -1,10 +1,21 @@
 #![deny(clippy::pedantic)]
+
+#[must_use]
+pub const fn marker() -> i32 {
+    1
+}
+
 #[cfg(test)]
 mod database {
     use std::error::Error;
     use std::io::{Read, Write};
     use std::net::{TcpStream, ToSocketAddrs};
     use std::time::Duration;
+
+    #[test]
+    fn marker_is_one() {
+        assert_eq!(super::marker(), 1);
+    }
 
     #[test]
     fn database_url_reaches_postgres() -> Result<(), Box<dyn Error>> {

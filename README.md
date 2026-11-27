@@ -128,7 +128,7 @@ PR 上的自检只查格式：五处 `uses` 都是这个形式，五个 sha 相�
 | `wit` | 没有 `wit/`（或 `wit-dir`）就跳过。有目录则对整个目录跑一次 `wasm-tools component wit`。若有基线提交，再用 `git diff` 报告接口差异；没有成熟的 WIT 兼容性工具，差异不因此失败。 |
 | `proptest` | 默认关。打开后没有 `proptest` 依赖则失败；有则 `PROPTEST_CASES=256`。 |
 | `fuzz` | 默认关。打开后没有 `fuzz/Cargo.toml` 或 target 则失败。有则用 `nightly-2026-11-20` 构建并每个目标最多跑 15 秒。`cargo-fuzz` 0.13.2 的 build 子命令没有 `--locked`，所以先 `cargo metadata --locked`。Linux 预编译包是 musl，构建时显式指定 `x86_64-unknown-linux-gnu`，否则会去编 musl 目标。 |
-| `mutants` | 默认关。pull request 上用 `git diff --relative` 加 `--in-diff`；其他事件检查全部突变。 |
+| `mutants` | 默认关。pull request 上用 `git diff --relative` 加 `--in-diff`；其他事件检查全部突变。`postgres` 为 true 时和 `cargo-test` 挂同一套 Postgres，并设置同一个 `DATABASE_URL`。 |
 
 `postgres` 是 `rust.yml` 和 `test.yml` 的 `workflow_call` 布尔输入，默认 false。调用方这样打开：
 
@@ -140,7 +140,7 @@ jobs:
       postgres: true
 ```
 
-只有 `test.yml` 的 `cargo-test` 在 `postgres` 为 true 时挂 Postgres 16。镜像按 digest 钉成 `postgres@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8`，健康检查命令是 `pg_isready`。这个 job 里的 `DATABASE_URL` 是 `postgres://postgres:postgres@127.0.0.1:5432/postgres`。为 false 时 `image` 是空字符串，服务不启动，也不设置 `DATABASE_URL`。job 名仍是 `cargo-test`。`services` 不能写 `if`，条件只能放在 `image` 表达式里。
+`test.yml` 的 `cargo-test` 和 `mutants` 在 `postgres` 为 true 时都挂 Postgres 16。镜像按 digest 钉成 `postgres@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8`，健康检查命令是 `pg_isready`。这两个 job 里的 `DATABASE_URL` 是 `postgres://postgres:postgres@127.0.0.1:5432/postgres`。为 false 时 `image` 是空字符串，服务不启动，也不设置 `DATABASE_URL`。job 名仍是 `cargo-test` 和 `mutants`。`services` 不能写 `if`，条件只能放在 `image` 表达式里。
 
 `rust.yml` 的 `test` job 把 `postgres` 转给 `test.yml`。默认 false 时不挂服务，也不设置 `DATABASE_URL`，跑的 job 和以前一样。本仓库的 `ci.yml` 另用 `./.github/workflows/test.yml` 直接调用，并传 `postgres: true`。
 
@@ -196,7 +196,7 @@ jobs:
 
 ## 本仓库自测
 
-[`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`ci.yml` 用 `uses` 加 `with` 调用 `rust.yml` 两次：一次打开 proptest、fuzz、mutants，并把 semver 基线设为 `9236264ec7b8a7b22c622fd0d0ad69c495b15348`；一次把 `targets` 设为 `wasm32-wasip2`、三个开关关闭。另有一个 job 用 `./.github/workflows/test.yml` 直接调用本仓库的 `test.yml`，`working-directory` 是 [`tests/postgres`](tests/postgres)，`postgres` 为 true。这个 crate 的测试在没有 `DATABASE_URL` 时失败。`rust.yml` 自己的 `pull_request` 触发仍会再跑一遍默认输入。只有 `burncloud/ci` 在没有根 `Cargo.toml` 时会回退到 `tests/fixture`。
+[`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`ci.yml` 用 `uses` 加 `with` 调用 `rust.yml` 两次：一次打开 proptest、fuzz、mutants，并把 semver 基线设为 `9236264ec7b8a7b22c622fd0d0ad69c495b15348`；一次把 `targets` 设为 `wasm32-wasip2`、三个开关关闭。另有一个 job 用 `./.github/workflows/test.yml` 直接调用本仓库的 `test.yml`，`working-directory` 是 [`tests/postgres`](tests/postgres)，`postgres` 和 `run-mutants` 都为 true。这个 crate 的测试在没有 `DATABASE_URL` 时失败，`mutants` 的基线会跑到它。`rust.yml` 自己的 `pull_request` 触发仍会再跑一遍默认输入。只有 `burncloud/ci` 在没有根 `Cargo.toml` 时会回退到 `tests/fixture`。
 
 ## 本地复现
 

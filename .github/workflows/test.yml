@@ -39,7 +39,7 @@ on:
         type: boolean
         default: false
       postgres:
-        description: 为 true 时给 cargo-test 挂 Postgres 16，并设置 DATABASE_URL。默认关闭。
+        description: 为 true 时给 cargo-test 和 mutants 挂 Postgres 16，并设置 DATABASE_URL。默认关闭。
         required: false
         type: boolean
         default: false
@@ -527,6 +527,16 @@ jobs:
   mutants:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    services:
+      postgres:
+        image: ${{ inputs.postgres && 'postgres@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: ${{ inputs.postgres && '--health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5' || '' }}
     steps:
       - name: Gate
         id: gate
@@ -597,8 +607,13 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          POSTGRES: ${{ inputs.postgres }}
+          DATABASE_URL: ${{ inputs.postgres && 'postgres://postgres:postgres@127.0.0.1:5432/postgres' || '' }}
         run: |
           set -euo pipefail
+          if [[ "$POSTGRES" != "true" ]]; then
+            unset DATABASE_URL
+          fi
           if [[ "$EVENT_NAME" == "pull_request" && -n "$BASE_SHA" && "$BASE_SHA" != "null" ]]; then
             git diff --relative "$BASE_SHA" -- . > "${RUNNER_TEMP}/pr.diff"
             echo "cargo-mutants: pull request，使用 --in-diff。"
