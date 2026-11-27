@@ -143,3 +143,38 @@ jobs:
     uses: burncloud/ci/.github/workflows/protect.yml@9f6fd0536505ce4ebdca70134041fedf3068e121
     with:
       protected-paths: ${{ inputs.protected-paths }}
+
+  rust-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+
+      - name: Check rust-only
+        env:
+          REPO: ${{ github.repository }}
+          JOB_JSON: ${{ toJSON(job) }}
+        run: |
+          set -euo pipefail
+          workflow_repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_JSON")
+          if [[ -z "$workflow_repo" || "$workflow_repo" == "null" ]]; then
+            echo "rust-only: 无法从 job 上下文解析工作流定义位置。" >&2
+            exit 1
+          fi
+          args=()
+          if [[ "$REPO" == "burncloud/ci" && "$workflow_repo" == "burncloud/ci" ]]; then
+            args+=(--exempt)
+          fi
+          bash .burncloud-ci/scripts/check-rust-only.sh "${args[@]}"

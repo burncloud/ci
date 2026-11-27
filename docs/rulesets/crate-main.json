@@ -115,6 +115,10 @@
           {
             "context": "rust / protect / protected-paths",
             "integration_id": 15368
+          },
+          {
+            "context": "rust / rust-only",
+            "integration_id": 15368
           }
         ]
       }

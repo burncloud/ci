@@ -30,6 +30,10 @@
             "integration_id": 15368
           },
           {
+            "context": "rust / rust-only",
+            "integration_id": 15368
+          },
+          {
             "context": "rust / api / capabilities",
             "integration_id": 15368
           },

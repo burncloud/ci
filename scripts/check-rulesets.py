@@ -28,6 +28,7 @@ LAYERS = [
     "api / semver",
     "api / capabilities",
     "protect / protected-paths",
+    "rust-only",
 ]
 CRATE_CONTEXTS = [f"rust / {name}" for name in LAYERS]
 CI_CONTEXTS = ["lint-workflows", "resolve"]
