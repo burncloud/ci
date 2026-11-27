@@ -84,7 +84,6 @@ track "$pure" .github/workflows/ci.yml
 track "$pure" .github/actionlint.yaml
 track "$pure" .github/CODEOWNERS
 track "$pure" migrations/001_init.sql
-track "$pure" migrations/nested/002.sql
 track "$pure" .gitignore
 track "$pure" crates/util/.gitignore
 track "$pure" LICENSE
@@ -246,3 +245,73 @@ if grep -F -x -e 'rust-only: src/lib.rs' >/dev/null <<<"$out"; then
   exit 1
 fi
 echo "PASS gitlink"
+
+crate_sql=$(new_repo)
+track "$crate_sql" src/lib.rs
+track "$crate_sql" migrations/0001.sql
+track "$crate_sql" crates/x/migrations/0001.sql
+expect_ok crate-migrations "$crate_sql"
+
+expect_direct_sql_fail() {
+  local name=$1
+  local bad=$2
+  local dir
+  dir=$(new_repo)
+  track "$dir" src/lib.rs
+  track "$dir" migrations/0001.sql
+  track "$dir" "$bad"
+  local status=0
+  local out
+  out=$(bash "$check" "$dir" 2>&1) || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    echo "FAIL ${name}: 应当失败" >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+  if ! grep -F -x -e "rust-only: ${bad}" >/dev/null <<<"$out"; then
+    echo "FAIL ${name}: 输出没有 ${bad}" >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+  if grep -F -x -e 'rust-only: migrations/0001.sql' >/dev/null <<<"$out"; then
+    echo "FAIL ${name}: migrations/0001.sql 不应报出" >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+  echo "PASS ${name}"
+}
+
+expect_direct_sql_fail migrations-subdir migrations/sub/0001.sql
+expect_direct_sql_fail crate-migrations-subdir crates/x/migrations/sub/0001.sql
+expect_direct_sql_fail sql-beside-crate crates/x/0001.sql
+expect_direct_sql_fail migrations-name-prefix my-migrations/0001.sql
+expect_direct_sql_fail migrations-name-suffix migrations-old/0001.sql
+
+mig_script=$(new_repo)
+track "$mig_script" src/lib.rs
+track "$mig_script" migrations/0001.sql
+track "$mig_script" migrations/tool.py
+track "$mig_script" migrations/run.sh
+status=0
+out=$(bash "$check" "$mig_script" 2>&1) || status=$?
+if [[ "$status" -eq 0 ]]; then
+  echo "FAIL migrations-script: 应当失败" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -x -e 'rust-only: migrations/tool.py' >/dev/null <<<"$out"; then
+  echo "FAIL migrations-script: 输出没有 migrations/tool.py" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -x -e 'rust-only: migrations/run.sh' >/dev/null <<<"$out"; then
+  echo "FAIL migrations-script: 输出没有 migrations/run.sh" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+if grep -F -x -e 'rust-only: migrations/0001.sql' >/dev/null <<<"$out"; then
+  echo "FAIL migrations-script: migrations/0001.sql 不应报出" >&2
+  printf '%s\n' "$out" >&2
+  exit 1
+fi
+echo "PASS migrations-script"

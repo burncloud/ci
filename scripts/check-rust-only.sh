@@ -62,11 +62,15 @@ toplevel=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || {
 allowed() {
   local path=$1
   local base=${path##*/}
+  local parent=${path%/*}
   case "$base" in
     LICENSE | LICENSE-MIT | LICENSE-APACHE | LICENSE.md | LICENSE.txt | *.rs | Cargo.toml | Cargo.lock | rust-toolchain | rust-toolchain.toml | *.toml | *.md | .gitignore)
       return 0
       ;;
   esac
+  if [[ "$path" == */* && "${parent##*/}" == "migrations" && "$base" == *.sql ]]; then
+    return 0
+  fi
   case "$path" in
     .github/CODEOWNERS)
       return 0
@@ -79,11 +83,6 @@ allowed() {
     supply-chain/*)
       case "$base" in
         *.lock) return 0 ;;
-      esac
-      ;;
-    migrations/*)
-      case "$base" in
-        *.sql) return 0 ;;
       esac
       ;;
   esac
