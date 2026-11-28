@@ -194,6 +194,12 @@ jobs:
 
 豁免和 `protected-paths` 同一条件：`github.repository` 与 `job.workflow_repository` 都是 `burncloud/ci` 时只打印不合规文件，退出码仍是 0。其他仓库会失败。
 
+### 7. PR 大小
+
+`rust.yml` 里的 `pr-size` job 直接跑 [`scripts/check-pr-size.sh`](scripts/check-pr-size.sh)，不另起嵌套工作流，所以不占用那五处 pin。它用 `git diff --numstat <base>...<head>` 统计相对 PR base 的新增加删除行数，超过 400 行失败。不计入任意目录下的 `Cargo.lock`，以及路径分量恰好为 `supply-chain` 的目录下的文件。这两类是 cargo 和 cargo-vet 生成的锁文件与审查库，不是手写改动。`numstat` 为 `-` 的二进制文件单独列出，不计入行数。失败时打印总行数和每个计入文件的行数。只在 `pull_request` 上运行，`push` 和 `merge_group` 不跑。
+
+调用方 job id 是 `rust` 时，检查名是 `rust / pr-size`。本仓库直接触发时是 `pr-size`，`ci.yml` 里另一次调用是 `caller / pr-size`。
+
 ## 本仓库自测
 
 [`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`ci.yml` 用 `uses` 加 `with` 调用 `rust.yml` 两次：一次打开 proptest、fuzz、mutants，并把 semver 基线设为 `9236264ec7b8a7b22c622fd0d0ad69c495b15348`；一次把 `targets` 设为 `wasm32-wasip2`、三个开关关闭。另有一个 job 用 `./.github/workflows/test.yml` 直接调用本仓库的 `test.yml`，`working-directory` 是 [`tests/postgres`](tests/postgres)，`postgres` 和 `run-mutants` 都为 true。这个 crate 的测试在没有 `DATABASE_URL` 时失败，`mutants` 的基线会跑到它。`rust.yml` 自己的 `pull_request` 触发仍会再跑一遍默认输入。只有 `burncloud/ci` 在没有根 `Cargo.toml` 时会回退到 `tests/fixture`。
@@ -221,6 +227,7 @@ bash scripts/check-nested-workflow-pin.sh --release
 bash scripts/test-reusable-uses.sh
 bash scripts/test-nested-workflow-pin.sh
 bash scripts/test-rust-only.sh
+bash scripts/test-pr-size.sh
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py
