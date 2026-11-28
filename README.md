@@ -208,9 +208,9 @@ jobs:
 
 `rust.yml` 里的 `pr-body` job 直接跑 [`scripts/check-pr-body.sh`](scripts/check-pr-body.sh)，不另起嵌套工作流，所以不占用那五处 pin。只在 `pull_request` 上运行，`push` 和 `merge_group` 不跑。运行时请求 `GET /repos/{owner}/{repo}/pulls/{number}` 读取当前正文，不用事件 payload 里的旧正文。编辑正文后重跑这次检查会读到新内容。只改正文不会自动触发；调用方要在 `pull_request.types` 里保留 `opened`、`synchronize`、`reopened`，并加上 `edited`。正文放进环境变量 `PR_BODY` 再交给脚本，不拼进 shell。
 
-ATX 标题行才算：行首最多 3 个空格，接着 1 到 6 个 `#`，再一个空格，内容去掉首尾空白和可选的收尾 `#` 后必须正好是「修正了哪些旧问题」。围栏代码块里的同名行不算。没有这个标题就失败，并输出一句中文原因。
+ATX 标题行才算：行首最多 3 个空格，接着 1 到 6 个 `#`，再一个空格，内容去掉首尾空白和可选的收尾 `#` 后必须正好是「修正了哪些旧问题」。标题文字前后的空白先去掉，行内多几个空格仍然算。正文里的 CR 先去掉，CRLF 和 LF 一样。围栏代码块里的同名行不算。HTML 注释里的同名行也不算，注释可以跨行；先按围栏切，围栏外再去掉 `<!--` 到 `-->`，没闭合的注释一直算到正文结尾。没有这个标题就失败，并输出一句中文原因。
 
-`check-pr-body` 是布尔输入，默认 `true`。调用方传 `false` 就跳过。直接触发时 `workflow_call` 不会填这个默认值，输入是空的；工作流名是 `Rust` 时检查照样跑。调用方不要把工作流命名为 `Rust`，否则 `false` 关不掉。调用方这样关掉：
+`check-pr-body` 是布尔输入，默认 `true`。调用方传 `false` 就跳过，调用方工作流名叫 `Rust` 也一样。直接触发时 `workflow_call` 不会填这个默认值，输入是空的。空值和布尔 `false` 在 GitHub 表达式里宽松相等，都变成 0，所以不能写 `inputs.check-pr-body != false`，否则直接触发会被跳过。job 条件是 `github.event_name == 'pull_request' && toJSON(inputs.check-pr-body) != 'false'`。`toJSON` 把空值写成 `null`、把 `false` 写成 `false`，只有显式 `false` 会跳过。调用方这样关掉：
 
 ```yaml
 jobs:
