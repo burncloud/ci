@@ -252,6 +252,7 @@ jobs:
           bash scripts/test-reusable-uses.sh
           bash scripts/test-nested-workflow-pin.sh
           bash scripts/test-rust-only.sh
+          bash scripts/test-pr-size.sh
 
       - name: Check clippy and comments
         run: |
