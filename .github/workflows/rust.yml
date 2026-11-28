@@ -178,3 +178,41 @@ jobs:
             args+=(--exempt)
           fi
           bash .burncloud-ci/scripts/check-rust-only.sh "${args[@]}"
+
+  pr-size:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+
+      - name: Check PR size
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" == "null" ]]; then
+            echo "pr-size: 无法确定 diff 的 base，拒绝放行。" >&2
+            exit 1
+          fi
+          if [[ -z "${HEAD_SHA}" || "${HEAD_SHA}" == "null" ]]; then
+            echo "pr-size: 无法确定 diff 的 head，拒绝放行。" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" || ! git cat-file -e "${HEAD_SHA}^{commit}"; then
+            git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          fi
+          bash .burncloud-ci/scripts/check-pr-size.sh "$BASE_SHA" "$HEAD_SHA"
