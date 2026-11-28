@@ -102,19 +102,43 @@ jobs:
             exit 1
           fi
 
+          explain='protected: 这是预期行为：改了受保护路径，这项检查会一直失败；批准不会让它变绿；需要仓库管理员在 PR 里 bypass 合并。'
+
           printf '%s\n' 'src/lib.rs' > "${tmp}/ok"
-          bash scripts/check-protected-paths.sh --changed "${tmp}/ok"
+          ok_out=$(bash scripts/check-protected-paths.sh --changed "${tmp}/ok" 2>&1)
+          if grep -F -- "$explain" >/dev/null <<<"$ok_out"; then
+            echo "未命中时不应出现预期行为说明。" >&2
+            printf '%s\n' "$ok_out" >&2
+            exit 1
+          fi
 
           printf '%s\n' '.github/workflows/ci.yml' > "${tmp}/bad"
-          if bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
+          bad_status=0
+          bad_out=$(bash scripts/check-protected-paths.sh --changed "${tmp}/bad" 2>&1) || bad_status=$?
+          if [[ "$bad_status" -ne 1 ]]; then
             echo "预期 .github/ 命中后失败。" >&2
+            exit 1
+          fi
+          if ! grep -Fxq -- "$explain" <<<"$bad_out"; then
+            echo "命中后应打印预期行为说明。" >&2
+            printf '%s\n' "$bad_out" >&2
+            exit 1
+          fi
+          if ! grep -Fxq -- "::error::${explain}" <<<"$bad_out"; then
+            echo "命中后应发出 GitHub Actions 错误注释。" >&2
+            printf '%s\n' "$bad_out" >&2
             exit 1
           fi
           if ! grep -Fq "if: github.event_name == 'pull_request'" .github/workflows/protect.yml; then
             echo "protected-paths 必须只在 pull_request 上运行。" >&2
             exit 1
           fi
-          bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --exempt
+          exempt_out=$(bash scripts/check-protected-paths.sh --changed "${tmp}/bad" --exempt 2>&1)
+          if grep -F -- "$explain" >/dev/null <<<"$exempt_out"; then
+            echo "豁免时不应出现失败说明。" >&2
+            printf '%s\n' "$exempt_out" >&2
+            exit 1
+          fi
 
           printf '%s\n' 'crates/foo/deny.toml' 'contracts/api.md' 'supply-chain/config.toml' 'rust-toolchain.toml' '.cargo/config.toml' 'vendor/serde/src/lib.rs' > "${tmp}/bad"
           if bash scripts/check-protected-paths.sh --changed "${tmp}/bad"; then
