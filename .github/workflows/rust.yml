@@ -101,7 +101,7 @@ jobs:
   lint:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: burncloud/ci/.github/workflows/lint.yml@cc02a620ac649a064441d3665d987f2df38431dc
+    uses: burncloud/ci/.github/workflows/lint.yml@d0502717561f5e3c3e3472e521935ff637022117
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -109,7 +109,7 @@ jobs:
   test:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: burncloud/ci/.github/workflows/test.yml@cc02a620ac649a064441d3665d987f2df38431dc
+    uses: burncloud/ci/.github/workflows/test.yml@d0502717561f5e3c3e3472e521935ff637022117
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -123,7 +123,7 @@ jobs:
   supply-chain:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: burncloud/ci/.github/workflows/supply-chain.yml@cc02a620ac649a064441d3665d987f2df38431dc
+    uses: burncloud/ci/.github/workflows/supply-chain.yml@d0502717561f5e3c3e3472e521935ff637022117
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -131,7 +131,7 @@ jobs:
   api:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: burncloud/ci/.github/workflows/api.yml@cc02a620ac649a064441d3665d987f2df38431dc
+    uses: burncloud/ci/.github/workflows/api.yml@d0502717561f5e3c3e3472e521935ff637022117
     with:
       toolchain: ${{ inputs.toolchain }}
       working-directory: ${{ inputs.working-directory || needs.resolve.outputs.dir }}
@@ -140,7 +140,7 @@ jobs:
   protect:
     needs: resolve
     if: always() && (needs.resolve.result == 'success' || needs.resolve.result == 'skipped')
-    uses: burncloud/ci/.github/workflows/protect.yml@cc02a620ac649a064441d3665d987f2df38431dc
+    uses: burncloud/ci/.github/workflows/protect.yml@d0502717561f5e3c3e3472e521935ff637022117
     with:
       protected-paths: ${{ inputs.protected-paths }}
 
