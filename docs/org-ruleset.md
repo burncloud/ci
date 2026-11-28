@@ -28,7 +28,7 @@ PR 作者可以修改调用方的 `ci.yml`：换掉 `uses`、改 `protected-path
 [docs/rulesets/crate-main.json](rulesets/crate-main.json) 配这些：
 
 - 禁止删除默认分支，禁止强推。必须走 pull request，从而禁止直接推送。
-- 必需状态检查用实测的 `rust / ...` 名字，每条都绑定 `integration_id` `15368`。
+- 必需状态检查用实测的 `rust / ...` 名字，每条都绑定 `integration_id` `15368`。`pr-size` 和 `pr-body` 不在这份名单里。仅 ci 仓库必过，调用方仓库只报红。
 - 至少 1 人审批，并且要求 Code Owner 审批。推了新提交后旧批准失效。最后一次推送的人不能充当这次的批准。未解决的 review 线程会挡住合并。
 - `bypass_actors` 是仓库管理员（`RepositoryRole`，`actor_id` `5`），`bypass_mode` 是 `pull_request`。`protected-paths` 是必需检查，改 `.github/` 或工具链的 PR 本来永远合不进。管理员只能在 PR 里绕过，不能直推。`pull_request` 这个模式只对分支规则集有效。
 - `enforcement` 是 `disabled`。
@@ -48,11 +48,13 @@ EXPECTED_ENFORCEMENT=active bash scripts/check-ruleset-readback.sh docs/rulesets
 
 ## 免费套餐：burncloud/ci
 
-本仓库的 main 用 [docs/rulesets/ci-main.json](rulesets/ci-main.json)。规则和 `crate-main` 相同：pull request、1 个批准、Code Owner、新提交使旧批准失效、last push approval、review 线程必须解决、禁止强推、禁止删除分支。bypass 同样是仓库管理员的 `pull_request` 模式，原因相同。`enforcement` 是 `disabled`。
+本仓库的 main 用 [docs/rulesets/ci-main.json](rulesets/ci-main.json)。分支规则和 `crate-main` 相同：pull request、1 个批准、Code Owner、新提交使旧批准失效、last push approval、review 线程必须解决、禁止强推、禁止删除分支。bypass 同样是仓库管理员的 `pull_request` 模式，原因相同。`enforcement` 是 `disabled`。必需检查多了只属于本仓库的 `pr-size` 和 `pr-body`。仅 ci 仓库必过，调用方仓库只报红。
 
 `.github/CODEOWNERS` 把全部路径交给 `@rustburn` 和 `@ivories`。`rustburn` 负责写代码，是 owner，紧急时走仓库管理员的 `pull_request` bypass。`ivories`（GitHub id `12606587`）负责审批，是 Code Owner。两人在 GitHub 上都要有写权限。`gh api repos/burncloud/ci/codeowners/errors` 返回的 `errors` 为空才算配好。
 
 必需检查用本仓库 PR 上实测会跑起来的名字，每条 `integration_id` 都是 `15368`：`lint-workflows`、直接触发的 `resolve` 和两段式名字、`ci.yml` 里 `rust` 与 `caller` 两次调用的三段式名字。新增的注释检查同样按这个形状列入：`lint / comments`、`rust / lint / comments`、`caller / lint / comments`。`rust-only` 是 `rust.yml` 里的直接 job，检查名是 `rust-only`、`rust / rust-only`、`caller / rust-only`。`rust / resolve` 和 `caller / resolve` 会跳过并以 Success 报告，设为必需没有意义，所以不在名单里。
+
+`pr-size` 和 `pr-body` 也是 `rust.yml` 里的直接 job，`if` 限定在 `pull_request`。#28 的头 `fec9058b5eefd4047d9dbde3a5a40ac6c2772d83` 上，`Rust` 工作流的 check runs 报了 `pr-size` 和 `pr-body`，`CI` 工作流报了 `rust / pr-size`、`rust / pr-body`、`caller / pr-size`、`caller / pr-body`。六条都是 GitHub Actions（`integration_id` `15368`）的 success，所以写入 `ci-main.json`。`postgres` 那次调用没有这两项，不另造名字。`crate-main.json` 不包含它们：router、billing、template、next、commerce 上检查失败只报红，不挡合并。仅 ci 仓库必过，调用方仓库只报红。
 
 标签不能和创建放在同一份规则集里。`bypass_actors` 作用在整份规则集上，不是单条规则。`pull_request` 模式只适用于分支规则集，标签上不能用。`always` 会绕过该规则集里的每一条规则，不只是 creation。因此 `v*` 拆成两份，`latest` 再拆成「不能删」和「可以移动」两份。`refs/tags/v*` 是通配，两份 `v*` 规则集都显式 `exclude` `refs/tags/latest`，避免把浮动标签卷进去。
 
