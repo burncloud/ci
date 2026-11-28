@@ -74,7 +74,7 @@ ci=$root/.github/workflows/ci.yml
 if ! awk '
   $0 ~ /^  pr-body:/ { in_job = 1; next }
   in_job && $0 ~ /^  [A-Za-z0-9_-]+:/ { in_job = 0 }
-  in_job && $0 ~ /^    if: github.event_name == '\''pull_request'\'' && inputs.check-pr-body != false$/ { found = 1 }
+  in_job && $0 ~ /^    if: github.event_name == '\''pull_request'\'' && \(inputs.check-pr-body \|\| github.workflow == '\''Rust'\''\)$/ { found = 1 }
   END { exit !found }
 ' "$rust"; then
   echo "FAIL workflow: pr-body 必须只在 pull_request 上运行，并且可以用 input 关闭" >&2
