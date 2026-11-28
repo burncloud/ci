@@ -58,11 +58,17 @@ on:
         required: false
         type: boolean
         default: false
+      check-pr-body:
+        description: 为 false 时跳过 PR 正文标题检查。默认检查。
+        required: false
+        type: boolean
+        default: true
   pull_request:
   merge_group:
 
 permissions:
   contents: read
+  pull-requests: read
 
 # 组名同时带工作流名和 concurrency-key。
 # 直接触发时 github.workflow 是 Rust；被 uses 调用时是调用方工作流的名字。
@@ -216,3 +222,44 @@ jobs:
             git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
           fi
           bash .burncloud-ci/scripts/check-pr-size.sh "$BASE_SHA" "$HEAD_SHA"
+
+  pr-body:
+    if: github.event_name == 'pull_request' && (inputs.check-pr-body || github.workflow == 'Rust')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .burncloud-ci
+          persist-credentials: false
+
+      - name: Check PR body
+        env:
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PR_NUMBER}" || "${PR_NUMBER}" == "null" ]]; then
+            echo "pr-body: 无法确定 pull request 编号，拒绝放行。" >&2
+            exit 1
+          fi
+          tmp=$(mktemp)
+          if ! gh api "/repos/${REPO}/pulls/${PR_NUMBER}" > "$tmp"; then
+            echo "pr-body: 读取 PR 正文失败，拒绝放行。" >&2
+            exit 1
+          fi
+          if ! jq -e 'has("body")' "$tmp" >/dev/null; then
+            echo "pr-body: 读取 PR 正文失败，拒绝放行。" >&2
+            exit 1
+          fi
+          PR_BODY=$(jq -r '.body // empty' "$tmp") || {
+            echo "pr-body: 读取 PR 正文失败，拒绝放行。" >&2
+            exit 1
+          }
+          rm -f "$tmp"
+          export PR_BODY
+          bash .burncloud-ci/scripts/check-pr-body.sh
