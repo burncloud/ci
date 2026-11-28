@@ -30,10 +30,15 @@ LAYERS = [
     "protect / protected-paths",
     "rust-only",
 ]
+CI_PR_CHECKS = (
+    "pr-size",
+    "pr-body",
+)
 CRATE_CONTEXTS = [f"rust / {name}" for name in LAYERS]
 CI_CONTEXTS = ["lint-workflows", "resolve"]
 for prefix in ("", "rust / ", "caller / "):
     CI_CONTEXTS.extend(f"{prefix}{name}" for name in LAYERS)
+    CI_CONTEXTS.extend(f"{prefix}{name}" for name in CI_PR_CHECKS)
 
 ADMIN_PR = {
     "actor_id": 5,
@@ -360,10 +365,40 @@ def self_test_tags():
         fail("ci-tags-latest-delete 自测：出现 Integration bypass 应当失败")
 
 
+def status_contexts(name):
+    data = load(name)
+    return [
+        item["context"]
+        for item in rule(data, "required_status_checks")["parameters"]["required_status_checks"]
+    ]
+
+
+def self_test_ci_pr_checks():
+    for name in CI_PR_CHECKS:
+        for prefix in ("", "rust / ", "caller / "):
+            context = f"{prefix}{name}"
+            if context not in CI_CONTEXTS:
+                fail(f"ci 名单必须包含 {context}")
+            if context in CRATE_CONTEXTS:
+                fail(f"crate 名单不能包含 {context}")
+    if any("pr-body" in item or "pr-size" in item for item in CRATE_CONTEXTS):
+        fail("crate 名单不能包含 pr-body 或 pr-size，仅 ci 仓库必过")
+    crate = status_contexts("crate-main.json")
+    ci = status_contexts("ci-main.json")
+    for name in CI_PR_CHECKS:
+        for prefix in ("", "rust / ", "caller / "):
+            context = f"{prefix}{name}"
+            if context not in ci:
+                fail(f"ci-main.json 必须包含 {context}")
+            if context in crate:
+                fail(f"crate-main.json 不能包含 {context}，调用方仓库只报红")
+
+
 def main():
     self_test_codeowners()
     self_test_organization_admin()
     self_test_tags()
+    self_test_ci_pr_checks()
     check_codeowners()
     check_branch(load("crate-main.json"), CRATE_CONTEXTS)
     check_branch(load("ci-main.json"), CI_CONTEXTS)
