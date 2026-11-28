@@ -192,6 +192,8 @@ if [[ "$check_lints" -eq 1 ]]; then
   done <"$changed"
 fi
 
+failure_explanation='protected: 这是预期行为：改了受保护路径，这项检查会一直失败；批准不会让它变绿；需要仓库管理员在 PR 里 bypass 合并。'
+
 if [[ "$hits" -eq 0 ]]; then
   echo "protected: 没有命中受保护路径。"
   exit 0
@@ -203,4 +205,6 @@ if [[ "$exempt" -eq 1 ]]; then
 fi
 
 echo "protected: 受保护路径被修改，检查失败。" >&2
+echo "$failure_explanation" >&2
+echo "::error::${failure_explanation}"
 exit 1
