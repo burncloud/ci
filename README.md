@@ -8,11 +8,13 @@ BurnCloud 各 Rust crate 仓库共用的 GitHub Actions。规则只改这里。�
 name: CI
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   merge_group:
   push:
     branches: [main]
 permissions:
   contents: read
+  pull-requests: read
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -24,6 +26,8 @@ jobs:
       run-fuzz: false
       run-mutants: false
 ```
+
+`pull_request` 写上 `edited` 后，只改正文也会重新跑。不写 `types` 时默认没有 `edited`。`pull-requests: read` 给 `pr-body` 用：检查在运行时读取当前正文，编辑后重跑能看到新内容。
 
 升级到 Team 并启用组织级 required workflow 之后，再删掉这份 `uses` job，否则会和注入的 `rust.yml` 各跑一遍。免费套餐下留着这个 job，它就是清单仓库的 CI。
 
@@ -82,7 +86,7 @@ PR 上的自检只查格式：五处 `uses` 都是这个形式，五个 sha 相�
 
 ## 六层
 
-汇总工作流是 [`.github/workflows/rust.yml`](.github/workflows/rust.yml)。它有 `workflow_call`、`pull_request` 和 `merge_group`。权限是 `contents: read`。`cargo` 命令带 `--locked`。同一 PR 的新提交会取消旧运行。
+汇总工作流是 [`.github/workflows/rust.yml`](.github/workflows/rust.yml)。它有 `workflow_call`、`pull_request` 和 `merge_group`。权限是 `contents: read` 与 `pull-requests: read`。`cargo` 命令带 `--locked`。同一 PR 的新提交会取消旧运行。
 
 直接被 `pull_request` 触发、且仓库根没有 `Cargo.toml` 时，会改用 `tests/fixture`。这只为了本仓库自测。crate 仓库应把清单放在根目录，或通过 `working-directory` 指进去。
 
@@ -200,6 +204,24 @@ jobs:
 
 调用方 job id 是 `rust` 时，检查名是 `rust / pr-size`。本仓库直接触发时是 `pr-size`，`ci.yml` 里另一次调用是 `caller / pr-size`。
 
+### 8. PR 正文
+
+`rust.yml` 里的 `pr-body` job 直接跑 [`scripts/check-pr-body.sh`](scripts/check-pr-body.sh)，不另起嵌套工作流，所以不占用那五处 pin。只在 `pull_request` 上运行，`push` 和 `merge_group` 不跑。运行时请求 `GET /repos/{owner}/{repo}/pulls/{number}` 读取当前正文，不用事件 payload 里的旧正文。编辑正文后重跑这次检查会读到新内容。只改正文不会自动触发；调用方要在 `pull_request.types` 里保留 `opened`、`synchronize`、`reopened`，并加上 `edited`。正文放进环境变量 `PR_BODY` 再交给脚本，不拼进 shell。
+
+ATX 标题行才算：行首最多 3 个空格，接着 1 到 6 个 `#`，再一个空格，内容去掉首尾空白和可选的收尾 `#` 后必须正好是「修正了哪些旧问题」。围栏代码块里的同名行不算。没有这个标题就失败，并输出一句中文原因。
+
+`check-pr-body` 是布尔输入，默认 `true`。调用方要关掉时：
+
+```yaml
+jobs:
+  rust:
+    uses: burncloud/ci/.github/workflows/rust.yml@latest
+    with:
+      check-pr-body: false
+```
+
+令牌需要 `pull-requests: read`。调用方 job id 是 `rust` 时，检查名是 `rust / pr-body`。本仓库直接触发时是 `pr-body`，`ci.yml` 里另一次调用是 `caller / pr-body`。
+
 ## 本仓库自测
 
 [`tests/fixture`](tests/fixture) 带 proptest、`fuzz/`、`supply-chain/`，以及 `[lints.rust] unsafe_code = "forbid"`。`ci.yml` 用 `uses` 加 `with` 调用 `rust.yml` 两次：一次打开 proptest、fuzz、mutants，并把 semver 基线设为 `9236264ec7b8a7b22c622fd0d0ad69c495b15348`；一次把 `targets` 设为 `wasm32-wasip2`、三个开关关闭。另有一个 job 用 `./.github/workflows/test.yml` 直接调用本仓库的 `test.yml`，`working-directory` 是 [`tests/postgres`](tests/postgres)，`postgres` 和 `run-mutants` 都为 true。这个 crate 的测试在没有 `DATABASE_URL` 时失败，`mutants` 的基线会跑到它。`rust.yml` 自己的 `pull_request` 触发仍会再跑一遍默认输入。只有 `burncloud/ci` 在没有根 `Cargo.toml` 时会回退到 `tests/fixture`。
@@ -228,6 +250,7 @@ bash scripts/test-reusable-uses.sh
 bash scripts/test-nested-workflow-pin.sh
 bash scripts/test-rust-only.sh
 bash scripts/test-pr-size.sh
+bash scripts/test-pr-body.sh
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py
