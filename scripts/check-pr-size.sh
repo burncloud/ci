@@ -57,7 +57,7 @@ while IFS=$'\t' read -r added deleted path || [[ -n "${path:-}" ]]; do
   lines=$((added + deleted))
   total=$((total + lines))
   counted+=("${lines}"$'\t'"${added}"$'\t'"${deleted}"$'\t'"${path}")
-done < <(git -C "$repo" -c core.quotepath=false diff --numstat "${base}...${head}")
+done < <(git -C "$repo" -c core.quotepath=false -c diff.renames=true diff --numstat "${base}...${head}")
 
 emit() {
   local stream=$1

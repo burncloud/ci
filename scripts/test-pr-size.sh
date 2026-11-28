@@ -4,6 +4,12 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 check=$root/scripts/check-pr-size.sh
 
+cfg=$(mktemp)
+trap 'rm -f "$cfg"' EXIT
+export GIT_CONFIG_GLOBAL=$cfg
+export GIT_CONFIG_NOSYSTEM=1
+git config --global diff.renames false
+
 new_repo() {
   local dir
   dir=$(mktemp -d)
@@ -173,6 +179,37 @@ commit "$counted_note" add-notes
 head_note=$(git -C "$counted_note" rev-parse HEAD)
 expect_ok not-supply-chain-dir "$counted_note" "$base_note" "$head_note" 10 \
   "pr-size: 10 行  docs/supply-chain-notes.md  (+10 -0)"
+
+rename_only=$(new_repo)
+write_lines "$rename_only/src/old.rs" 100
+commit "$rename_only" base
+base_rename=$(git -C "$rename_only" rev-parse HEAD)
+git -C "$rename_only" mv -- src/old.rs src/new.rs
+commit "$rename_only" rename
+head_rename=$(git -C "$rename_only" rev-parse HEAD)
+expect_ok rename-only "$rename_only" "$base_rename" "$head_rename" 0 \
+  "pr-size: 0 行  src/{old.rs => new.rs}  (+0 -0)"
+
+rename_edit=$(new_repo)
+write_lines "$rename_edit/src/old.rs" 100
+commit "$rename_edit" base
+base_edit=$(git -C "$rename_edit" rev-parse HEAD)
+git -C "$rename_edit" mv -- src/old.rs src/new.rs
+printf 'line-101\nline-102\nline-103\n' >>"$rename_edit/src/new.rs"
+commit "$rename_edit" rename-edit
+head_edit=$(git -C "$rename_edit" rev-parse HEAD)
+expect_ok rename-edit "$rename_edit" "$base_edit" "$head_edit" 3 \
+  "pr-size: 3 行  src/{old.rs => new.rs}  (+3 -0)"
+
+deleted=$(new_repo)
+write_lines "$deleted/src/gone.rs" 25
+commit "$deleted" base
+base_del=$(git -C "$deleted" rev-parse HEAD)
+rm -- "$deleted/src/gone.rs"
+commit "$deleted" delete
+head_del=$(git -C "$deleted" rev-parse HEAD)
+expect_ok delete-file "$deleted" "$base_del" "$head_del" 25 \
+  "pr-size: 25 行  src/gone.rs  (+0 -25)"
 
 if ! awk '
   $0 ~ /^  pr-size:/ { in_job = 1; next }

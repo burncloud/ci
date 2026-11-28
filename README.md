@@ -196,7 +196,7 @@ jobs:
 
 ### 7. PR 大小
 
-`rust.yml` 里的 `pr-size` job 直接跑 [`scripts/check-pr-size.sh`](scripts/check-pr-size.sh)，不另起嵌套工作流，所以不占用那五处 pin。它用 `git diff --numstat <base>...<head>` 统计相对 PR base 的新增加删除行数，超过 400 行失败。不计入任意目录下的 `Cargo.lock`，以及路径分量恰好为 `supply-chain` 的目录下的文件。这两类是 cargo 和 cargo-vet 生成的锁文件与审查库，不是手写改动。`numstat` 为 `-` 的二进制文件单独列出，不计入行数。失败时打印总行数和每个计入文件的行数。只在 `pull_request` 上运行，`push` 和 `merge_group` 不跑。
+`rust.yml` 里的 `pr-size` job 直接跑 [`scripts/check-pr-size.sh`](scripts/check-pr-size.sh)，不另起嵌套工作流，所以不占用那五处 pin。它用 `git -c diff.renames=true diff --numstat <base>...<head>` 统计相对 PR base 的新增加删除行数，超过 400 行失败。`diff.renames=true` 钉死重命名检测，纯重命名计 0 行，避免在 `diff.renames=false` 时被记成删除加新增。不计入任意目录下的 `Cargo.lock`，以及路径分量恰好为 `supply-chain` 的目录下的文件。这两类是 cargo 和 cargo-vet 生成的锁文件与审查库，不是手写改动。`numstat` 为 `-` 的二进制文件单独列出，不计入行数。失败时打印总行数和每个计入文件的行数。只在 `pull_request` 上运行，`push` 和 `merge_group` 不跑。
 
 调用方 job id 是 `rust` 时，检查名是 `rust / pr-size`。本仓库直接触发时是 `pr-size`，`ci.yml` 里另一次调用是 `caller / pr-size`。
 
