@@ -28,6 +28,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Check workflow interface
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/check-workflow-interface.sh
+
       - name: Read rust-toolchain.toml
         id: toolchain
         run: bash scripts/resolve-toolchain.sh
@@ -279,6 +285,7 @@ jobs:
           bash scripts/test-rust-only.sh
           bash scripts/test-pr-size.sh
           bash scripts/test-pr-body.sh
+          bash scripts/test-workflow-interface.sh
 
       - name: Check clippy and comments
         run: |

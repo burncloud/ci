@@ -84,6 +84,14 @@ PR 上的自检只查格式：五处 `uses` 都是这个形式，五个 sha 相�
 1. 只改这些文件，不要改 `rust.yml` 里的 sha。sha 仍是当时 `origin/main` 上的旧提交，格式检查通过，这一 PR 可以全绿。合并后的 squash 提交记为 S。main 上的 `release-ready` 会红，表示当前不能发版。这一步的 PR 里，`rust.yml` 调用的还是钉住的旧嵌套文件。新改的嵌套文件和脚本不会在这一步经过 `rust.yml` 跑一遍。
 2. 从包含 S 的 main 再开一个 PR，只把 `rust.yml` 五处 sha 改成 S。S 已经在 `origin/main` 上。这一步 `ci.yml` 的 `rust` 和 `caller` 会用新 sha，新改动第一次真正运行。这一 PR 必须全绿才能发版。squash 合并后 `release-ready` 恢复绿色。只给这个绿色的 main 提交打 `vX.Y.Z`，再移动 `latest`。
 
+## 接口兼容
+
+[`scripts/check-workflow-interface.sh`](scripts/check-workflow-interface.sh) 比较可复用工作流的 `on.workflow_call`：输入、是否必填、默认值、输出、secret，以及 job 实际需要的 `permissions`。job 写了 `permissions` 就用 job 的，否则用工作流顶层的；调用方要授予的是这些权限的并集。pull request 上比较 base 与 head，否则比较最新 `vX.Y.Z` 与 `HEAD`。
+
+破坏性变更：删除或重命名输入、输出、secret；输入或 secret 变为必填；新增必填输入或 secret；默认值变化。没写默认值时 string 是空串、boolean 是 false、number 是 0，写成同样的值不算变。调用方需要新权限，或把 `read` 升到 `write`，也算破坏。新增可选输入、输出、secret 不算。
+
+仓库根 [`VERSION`](VERSION) 是 `MAJOR.MINOR.PATCH`，不加 `v`。发版标签必须是 `v` 加这一行。只有 head 的主版本号高于 base，才放行破坏性变更。base 没有 `VERSION` 时，用该提交上的 `vX.Y.Z` 标签。`v1.3.5` 要求调用方加上 `pull-requests: read`，仍按次版本发布，就是这里要拦住的事。
+
 ## 六层
 
 汇总工作流是 [`.github/workflows/rust.yml`](.github/workflows/rust.yml)。它有 `workflow_call`、`pull_request` 和 `merge_group`。权限是 `contents: read` 与 `pull-requests: read`。`cargo` 命令带 `--locked`。同一 PR 的新提交会取消旧运行。
@@ -251,6 +259,7 @@ bash scripts/test-nested-workflow-pin.sh
 bash scripts/test-rust-only.sh
 bash scripts/test-pr-size.sh
 bash scripts/test-pr-body.sh
+bash scripts/test-workflow-interface.sh
 shellcheck scripts/*.sh
 actionlint -shellcheck "$(command -v shellcheck)"
 python3 scripts/check-rulesets.py
