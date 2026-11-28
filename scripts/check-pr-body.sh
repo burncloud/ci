@@ -81,13 +81,41 @@ heading_text() {
   return 0
 }
 
+strip_comments() {
+  local rest=$1
+  local before
+  visible=
+  while [[ "$rest" == *'<!--'* ]]; do
+    before=${rest%%'<!--'*}
+    visible+="$before"
+    rest=${rest#*'<!--'}
+    if [[ "$rest" == *'-->'* ]]; then
+      rest=${rest#*'-->'}
+    else
+      in_comment=1
+      return 0
+    fi
+  done
+  visible+="$rest"
+}
+
 body=${PR_BODY-}
 body=${body//$'\r'/}
 in_fence=0
+in_comment=0
 fence_char=
 fence_len=0
+visible=
 
 while IFS= read -r line || [[ -n "$line" ]]; do
+  if [[ "$in_comment" -eq 1 ]]; then
+    if [[ "$line" == *'-->'* ]]; then
+      line=${line#*'-->'}
+      in_comment=0
+    else
+      continue
+    fi
+  fi
   content=$(strip_indent "$line")
   if [[ "$in_fence" -eq 1 ]]; then
     if fence_marker "$content" && [[ "$marker_char" == "$fence_char" && "$marker_len" -ge "$fence_len" ]] && only_ws "$marker_rest"; then
@@ -101,7 +129,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fence_len=$marker_len
     continue
   fi
-  if heading_text "$line" && [[ "$heading" == "$target" ]]; then
+  strip_comments "$line"
+  if heading_text "$visible" && [[ "$heading" == "$target" ]]; then
     echo "pr-body: 正文含有 Markdown 标题「${target}」。"
     exit 0
   fi
